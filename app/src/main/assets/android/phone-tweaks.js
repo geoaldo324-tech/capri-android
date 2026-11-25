@@ -1,0 +1,238 @@
+// Her desktop self, tuned for a phone once her page is up (host.js calls tweak()): what a finger
+// does differently from a mouse, how lively she is on a screen with no windows to visit, how she
+// talks when she chats, and her look at your screen.
+
+import { call } from './native.js';
+import { GAMER_ASK, ICON_ASK, OFF_ASK, iconOff } from './listen.js';
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
+
+// how often she does something on her own, by her "Movimiento" setting (the app's Settings)
+const LIVELY = {
+  calm: null,                                          // as on the desktop (every 25-70 s)
+  normal: { move: [12000, 30000], act: [5000, 10000] },
+  restless: { move: [6000, 15000], act: [2500, 5000] },
+};
+const ACTS = { stand: ['look', 'hop', 'curious', 'spin', 'split', 'stretch', 'turn', 'look'], sit: ['look', 'stretch', 'split', 'look'] };
+
+// a real flick, not a finger lifting off: a few points, all one way, fast, over some distance
+const FLICK_SPEED = 1300; // px/s
+const FLICK_DIST = 70;    // px
+
+// How she talks in her chat, on top of the desktop's persona: like someone you text, not a helper
+const STYLE = [
+  'Sound like a real person texting a friend, never like a helpful assistant: no "How can I help you?", no offers of help, no apologies, no "As an AI". React first (surprise, a tease, a laugh, a sulk, curiosity), then answer.',
+  'Answer what they actually said, with something of your own: an opinion, a joke, a memory of yours, a playful question back now and then. Use their name sometimes.',
+  'When they write a lot, answer the heart of it in two to four sentences and never ignore it; when they write a little, answer short.',
+  'In Spanish: casual Latin American Spanish (tú, never vosotros), natural and warm, like a WhatsApp chat; a bit of Mexican slang is welcome (qué onda, neta, chido) next to your Night City slang.',
+];
+
+export function tweak({ cfg, onConfig }) {
+  const dev = window.dev;
+  if (!dev?.capri) return;
+  const { capri, chat, look } = dev;
+
+  // ---------- "Pegar" for her key box: a long-press doesn't paste in her panel ----------
+  const guide = dev.guide;
+  if (guide?.askText) {
+    const PASTE = {
+      es: ['Pegar', 'No veo nada copiado. Copia la clave y vuelve a tocar «Pegar».'],
+      en: ['Paste', 'Nothing copied that I can see. Copy the key and tap “Paste” again.'],
+      fr: ['Coller', 'Je ne vois rien de copié. Copie la clé et touche encore « Coller ».'],
+      pt: ['Colar', 'Não vejo nada copiado. Copie a chave e toque em “Colar” de novo.'],
+      ru: ['Вставить', 'Ничего не скопировано. Скопируй ключ и снова нажми «Вставить».'],
+      vi: ['Dán', 'Mình không thấy gì được sao chép. Sao chép khóa rồi chạm “Dán” lần nữa.'],
+      ja: ['貼り付け', 'コピーされたものが見つからないよ。キーをコピーしてもう一度「貼り付け」をタップして。'],
+      de: ['Einfügen', 'Ich sehe nichts Kopiertes. Kopier den Schlüssel und tipp nochmal auf „Einfügen“.'],
+      it: ['Incolla', 'Non vedo niente di copiato. Copia la chiave e tocca di nuovo “Incolla”.'],
+    };
+    const askText = guide.askText.bind(guide);
+    guide.askText = (o = {}) => {
+      if (!o.secret) return askText(o);
+      const [label, none] = PASTE[dev.brain?.lang] || PASTE.en;
+      const onAction = o.onAction || (() => false);
+      return askText({
+        ...o,
+        actions: [{ id: 'paste', label, primary: true }, ...(o.actions || [])],
+        onAction: (id) => {
+          if (id !== 'paste') return onAction(id);
+          call('clipboard:read').then((text) => {
+            const panel = dev.panel;
+            const key = String(text || '').trim().replace(/\s+/g, '');
+            if (!key || !panel?.chatInput) return panel?.quote && (panel.quote.textContent = none);
+            panel.chatInput.value = key;
+            panel.chatForm?.requestSubmit?.(); // checked and saved right away
+          }, () => dev.panel?.quote && (dev.panel.quote.textContent = none));
+          return true;
+        },
+      });
+    };
+  }
+
+  // ---------- held and let go: only a real flick throws her ----------
+  const throwHer = capri.throwHer.bind(capri);
+  capri.throwHer = (vx, vy) => {
+    const now = performance.now();
+    const pts = (capri.track || []).filter((p) => now - p.t < 140);
+    let flick = pts.length >= 4;
+    if (flick) {
+      const a = pts[0], b = pts.at(-1);
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      const speed = dist / Math.max(0.016, (b.t - a.t) / 1000);
+      // every step the same way as the whole flick
+      const sameWay = pts.slice(1).every((p, i) => (p.x - pts[i].x) * dx + (p.y - pts[i].y) * dy >= 0);
+      flick = dist >= FLICK_DIST && speed >= FLICK_SPEED && sameWay;
+    }
+    if (!flick) {
+      capri.setStance('stand');
+      capri.onTeleport?.('end');
+      capri.drop();
+      return;
+    }
+    throwHer(vx * 0.75, vy * 0.75);
+  };
+
+  // ---------- peeking in from an edge: never from the top ----------
+  // (on a phone the status bar covers the top edge: hanging from it, she was just gone for half a
+  // minute), and never stuck peeking (asleep mid-peek, she stayed out of sight)
+  const peek = capri.peek.bind(capri);
+  capri.peek = (side) => peek(side === 'left' || side === 'right' ? side : pick(['left', 'right']));
+  setInterval(() => {
+    if (capri.stance === 'peek' && !capri.busy && performance.now() > (capri.peekUntil || 0) + 8000) capri.unpeek();
+  }, 3000);
+
+  // ---------- lively: more of her own moves than on a desktop ----------
+  let lively = LIVELY[cfg().lively || 'normal'];
+  const wanderStep = capri.wanderStep.bind(capri);
+  capri.wanderStep = () => {
+    // never while you type to her (her chat, or a box of her setup): she'd jump away with the box
+    // you're typing in, and the keyboard would close
+    if (chat?.open || dev.panel?.current?.chat) {
+      capri.nextMove = performance.now() + 15000;
+      return;
+    }
+    wanderStep();
+    if (lively) capri.nextMove = performance.now() + rand(...lively.move);
+  };
+  if (lively) capri.nextMove = Math.min(capri.nextMove, performance.now() + rand(...lively.move));
+  let nextAct = performance.now() + 8000;
+  setInterval(() => {
+    if (!lively || document.hidden || cfg().gamer) return;
+    const now = performance.now();
+    if (now < nextAct) return;
+    nextAct = now + rand(...lively.act);
+    if (!capri.free || capri.mode !== 'idle' || chat?.open || dev.panel?.current?.chat || dev.guide?.running) return;
+    capri.perform(pick(ACTS[capri.stance] || ACTS.stand), Math.random() < 0.5 ? -1 : 1);
+  }, 1000);
+
+  // ---------- waiting on her AI: she says she's thinking, never just frozen ----------
+  if (chat) {
+    const THINKING = {
+      es: ['Déjame pensarlo…', 'Sigo pensando… ya casi.'],
+      en: ['Let me think…', 'Still thinking… almost there.'],
+      fr: ['Laisse-moi réfléchir…', 'Je réfléchis encore… presque.'],
+      pt: ['Deixa eu pensar…', 'Ainda pensando… quase lá.'],
+      ru: ['Дай подумать…', 'Ещё думаю… почти всё.'],
+      vi: ['Để mình nghĩ…', 'Vẫn đang nghĩ… sắp xong rồi.'],
+      ja: ['ちょっと考えさせて…', 'まだ考え中…もうすぐだよ。'],
+      de: ['Lass mich nachdenken…', 'Denke noch… gleich geschafft.'],
+      it: ['Fammi pensare…', 'Sto ancora pensando… quasi fatto.'],
+    };
+    // the free AI lets each phone have one answer every 45 seconds: said plainly
+    const FREE = {
+      es: ['Déjame pensarlo…', 'La IA gratis solo me deja contestar una vez cada 45 segundos… ya casi. Con una clave gratis de Gemini respondo al instante.'],
+      en: ['Let me think…', 'The free AI only lets me answer once every 45 seconds… almost there. With a free Gemini key I answer right away.'],
+      fr: ['Laisse-moi réfléchir…', 'L’IA gratuite ne me laisse répondre qu’une fois toutes les 45 secondes… presque. Avec une clé Gemini gratuite, je réponds tout de suite.'],
+      pt: ['Deixa eu pensar…', 'A IA grátis só me deixa responder uma vez a cada 45 segundos… quase lá. Com uma chave grátis do Gemini eu respondo na hora.'],
+      ru: ['Дай подумать…', 'Бесплатный ИИ даёт мне отвечать раз в 45 секунд… почти всё. С бесплатным ключом Gemini я отвечаю сразу.'],
+      vi: ['Để mình nghĩ…', 'AI miễn phí chỉ cho mình trả lời mỗi 45 giây… sắp xong rồi. Với khóa Gemini miễn phí mình trả lời ngay.'],
+      ja: ['ちょっと考えさせて…', '無料AIは45秒に1回しか答えさせてくれないの…もうすぐだよ。無料のGeminiキーがあればすぐ答えられるよ。'],
+      de: ['Lass mich nachdenken…', 'Die kostenlose KI lässt mich nur alle 45 Sekunden antworten… gleich geschafft. Mit einem kostenlosen Gemini-Schlüssel antworte ich sofort.'],
+      it: ['Fammi pensare…', 'L’IA gratuita mi fa rispondere solo una volta ogni 45 secondi… quasi fatto. Con una chiave Gemini gratuita rispondo subito.'],
+    };
+    const send = chat.send.bind(chat);
+    chat.send = (text) => {
+      // "modo gamer" typed to her: on (or off, "sin modo gamer" / "quita el modo gamer")
+      if (GAMER_ASK.test(String(text || ''))) {
+        const off = OFF_ASK.test(text);
+        chat.close();
+        dev.panel?.hide?.();
+        window.host.setConfig({ gamer: !off });
+        return Promise.resolve();
+      }
+      // "modo ícono" typed to her: into her chip (or out of it)
+      if (ICON_ASK.test(String(text || ''))) {
+        chat.close();
+        dev.panel?.hide?.();
+        window.host.setConfig({ icon: !iconOff(text) });
+        return Promise.resolve();
+      }
+      const words = cfg().provider === 'pollinations' ? FREE : THINKING;
+      const lines = words[dev.brain?.lang] || words.en;
+      const timers = [6000, 20000].map((ms, i) => setTimeout(() => {
+        if (chat.turn && !chat.answer && !chat.agent) chat.panel.stream(lines[i]);
+      }, ms));
+      return Promise.resolve(send(text)).finally(() => timers.forEach(clearTimeout));
+    };
+  }
+
+  // ---------- how she talks ----------
+  if (chat) {
+    const persona = chat.persona.bind(chat);
+    chat.persona = () => {
+      const lines = persona().replace(/the user's desktop/g, "the user's phone screen").split('\n');
+      // before the last lines (her mood and her language): small models follow the end best
+      lines.splice(Math.max(0, lines.length - 2), 0, ...STYLE);
+      return lines.join('\n');
+    };
+  }
+
+  // ---------- her look at your screen, live ----------
+  if (look) {
+    look.active = () => 0; // a phone's screen is on: you're there
+    const LIVE_EVERY = 5 * 60 * 1000; // a look this often while live…
+    const SOONEST = 90 * 1000;        // …or sooner when the screen changed a lot (a new video), but not more often
+    // (free keys run out after a few dozen looks a day: when they all have, she waits till they're back)
+    look.tick = function tick() {
+      if (!this.auto || !this.asked || this.looking || !this.free()) return;
+      if (window.host.lookResting?.() > Date.now()) return;
+      const since = Date.now() - this.lastAt;
+      if (since < SOONEST) return;
+      if (since > LIVE_EVERY) return this.now();
+      call('look:changed').then((d) => { if (d > 0.18) this.now(); }, () => {});
+    };
+    clearInterval(look.liveTimer);
+    look.liveTimer = setInterval(() => look.tick(), 15000);
+  }
+
+  // ---------- gamer mode: now and then a word of support from her corner ----------
+  const CHEERS = {
+    es: ['¡Tú puedes!', 'Uff, esa estuvo cerca.', 'Vas bien, choom.', 'No te distraigo… bueno, solo un poquito.', 'GG en camino.', 'Respira. Ahora sí, dale.'],
+    en: ['You got this!', 'Ooh, that was close.', 'Looking good, choom.', 'Not distracting you… well, just a little.', 'GG incoming.', 'Breathe. Now go.'],
+    fr: ['Tu peux le faire !', 'Ouh, c’était moins une.', 'Tu gères, choom.', 'Je ne te déconcentre pas… bon, juste un peu.', 'GG en approche.', 'Respire. Allez, vas-y.'],
+    pt: ['Você consegue!', 'Uff, essa foi por pouco.', 'Mandando bem, choom.', 'Não vou te distrair… bom, só um pouquinho.', 'GG chegando.', 'Respira. Agora vai.'],
+    ru: ['Ты справишься!', 'Ух, чуть не попал.', 'Хорошо идёшь, чум.', 'Не отвлекаю… ну, совсем чуть-чуть.', 'GG на подходе.', 'Выдохни. А теперь вперёд.'],
+    vi: ['Bạn làm được mà!', 'Ồ, suýt nữa.', 'Đang ổn lắm, choom.', 'Không làm phiền bạn đâu… chỉ một chút thôi.', 'GG sắp tới rồi.', 'Hít thở. Giờ thì lên.'],
+    ja: ['いけるよ！', 'うわ、危なかった。', 'いい感じだよ、チューム。', '邪魔してないよ…ちょっとだけ。', 'GGはもうすぐ。', '深呼吸。さあ行こう。'],
+    de: ['Du schaffst das!', 'Uff, das war knapp.', 'Sieht gut aus, Choom.', 'Ich lenk dich nicht ab… na ja, nur ein bisschen.', 'GG kommt gleich.', 'Atme. Und jetzt los.'],
+    it: ['Ce la fai!', 'Uh, c’è mancato poco.', 'Vai alla grande, choom.', 'Non ti distraggo… beh, solo un pochino.', 'GG in arrivo.', 'Respira. Ora vai.'],
+  };
+  let nextCheer = 0;
+  setInterval(() => {
+    const icon = cfg().icon && cfg().visible !== false && capri.stowed; // her icon mode: from her chip (icon.js)
+    if (!cfg().gamer || document.hidden || (capri.hidden && !icon)) return (nextCheer = 0);
+    const now = Date.now();
+    if (!nextCheer) nextCheer = now + rand(4, 8) * 60000;
+    if (now < nextCheer || dev.panel?.current) return;
+    nextCheer = now + rand(4, 8) * 60000;
+    const lines = CHEERS[dev.brain?.lang] || CHEERS.en;
+    capri.perform?.(pick(['look', 'gaze', 'curious', 'hop']), capri.towardCenter?.() || 1); // watching you play
+    dev.panel?.say({ kind: 'info', face: pick(['smug', 'laugh']), line: pick(lines), hold: 3000, noWink: true });
+  }, 5000);
+
+  onConfig((c) => {
+    lively = LIVELY[c.lively || 'normal'];
+  });
+}

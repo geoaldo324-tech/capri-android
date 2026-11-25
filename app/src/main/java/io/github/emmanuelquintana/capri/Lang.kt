@@ -1,0 +1,61 @@
+package io.github.emmanuelquintana.capri
+
+import android.content.Context
+import android.content.res.Configuration
+import java.util.Locale
+
+/**
+ * The app's language (Ajustes › Idioma): the phone's, or Spanish or English whatever the phone is
+ * in. The same choice goes to her (what she says), so the app and she speak the same.
+ */
+object Lang {
+    private const val PREF = "uiLang"
+
+    /**
+     * The languages the app is translated into. Another one: its res/values-<code>/strings.xml,
+     * its code here, and it shows up in Ajustes with its own name. (Her own lines, in her page,
+     * come in the same five, from the desktop's lines.js.)
+     */
+    val LANGS = listOf("es", "en", "fr", "pt", "ru", "vi", "ja", "de", "it")
+
+    /** A language in its own words: "Español", "English", "Français"… */
+    fun name(code: String): String {
+        val locale = Locale(code)
+        return locale.getDisplayLanguage(locale).replaceFirstChar { it.titlecase(locale) }
+    }
+
+    fun get(context: Context): String =
+        runCatching { context.getSharedPreferences("app", Context.MODE_PRIVATE).getString(PREF, "auto") }.getOrNull() ?: "auto"
+
+    fun set(context: Context, lang: String) {
+        context.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putString(PREF, lang).apply()
+        CapriSettings.set(context, "lang", lang) // her too
+    }
+
+    /** (1.12.2) Her language, as config.json is read for her page: the app's. Someone who only ever picked it in her
+     *  own menu (never in Ajustes) keeps that one, and the app takes it too. */
+    fun forHer(context: Context, saved: String): String {
+        val prefs = runCatching { context.getSharedPreferences("app", Context.MODE_PRIVATE) }.getOrNull() ?: return saved
+        if (prefs.contains(PREF)) return get(context)
+        if (saved in LANGS) setApp(context, saved)
+        return if (saved in LANGS) saved else "auto"
+    }
+
+    /** (1.12.2) Picked in her own menu (host.js): only the app's, she already has it. Its screens follow when they come back. */
+    fun setApp(context: Context, lang: String) {
+        if (lang != "auto" && lang !in LANGS) return
+        context.getSharedPreferences("app", Context.MODE_PRIVATE).edit().putString(PREF, lang).apply()
+    }
+
+    /** The language that context speaks now: "es", "en"… (the one picked, or the phone's). */
+    fun current(context: Context): String = context.resources.configuration.locales[0].language
+
+    /** A screen's (or her service's) context, in the language picked. */
+    fun wrap(base: Context): Context {
+        val lang = get(base)
+        if (lang !in LANGS) return base // "auto": the phone's
+        val conf = Configuration(base.resources.configuration)
+        conf.setLocale(Locale(lang))
+        return base.createConfigurationContext(conf)
+    }
+}

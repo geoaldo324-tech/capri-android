@@ -1,0 +1,197 @@
+package io.github.emmanuelquintana.capri
+
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
+import android.util.Log
+import android.webkit.ConsoleMessage
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import org.json.JSONObject
+
+/**
+ * A screen of the app drawn by one of her pages (1.10.0), like her Vestuario (ClosetActivity):
+ * - "chatlog": your chat history with her (ChatLog.kt), to read again or empty.
+ * - "games": games with her (assets/android/games.html): chess, minesweeper, 21, tic-tac-toe, ping pong, rock-paper-scissors.
+ * - "neuro": her neurodanzas (1.11.0, Neuro.kt, assets/android/neuro.html), to watch and rate.
+ * Only her own files are served; nothing here goes on the internet.
+ */
+class PageActivity : Activity() {
+    private var web: WebView? = null
+    private var page = ""
+
+    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(Lang.wrap(newBase))
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        page = intent.getStringExtra(EXTRA_PAGE)?.takeIf { it in PAGES } ?: return finish()
+        window.statusBarColor = Hud.INK
+        window.navigationBarColor = Hud.INK
+        val view = WebView(this).apply {
+            setBackgroundColor(Hud.INK)
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.textZoom = 100
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                    if (request.url.host != HOST) return null
+                    return serve(request.url.path ?: "/")
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
+
+                // its page crashed or was killed for memory: this screen closes, not the whole app
+                override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                    Diag.add("W", "$page: page gone (crash: ${detail.didCrash()})")
+                    if (web === view) web = null
+                    (view.parent as? android.view.ViewGroup)?.removeView(view)
+                    view.destroy()
+                    if (!isFinishing) finish()
+                    return true
+                }
+            }
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+                    Log.i("capri-$page", "${m.message()} (${m.sourceId().substringAfterLast('/')}:${m.lineNumber()})")
+                    return true
+                }
+            }
+            addJavascriptInterface(Bridge(), "CapriPage")
+        }
+        web = view
+        setContentView(Hud.clearOfBars(this, view))
+        view.loadUrl("https://$HOST/android/$page.html")
+    }
+
+    // (1.11.0, Emma: "cuando juegues en la app debe desaparecer la capri de encima, como opcional"): while
+    // the games are in front, her floating self steps aside (Juegos › «Capri flotante mientras juegas»)
+    override fun onResume() {
+        super.onResume()
+        if (page == "games" && hideWhilePlaying(this)) CapriService.current?.overlay?.shy(true, "games")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        CapriService.current?.overlay?.shy(false, "games")
+    }
+
+    override fun onDestroy() {
+        web?.destroy()
+        web = null
+        super.onDestroy()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        val w = web
+        if (w == null) return super.onBackPressed()
+        // her page first (a game's menu, a confirmation): it says if it took the Back
+        w.evaluateJavascript("window.capriBack ? window.capriBack() : false") { took ->
+            if (took != "true") finish()
+        }
+    }
+
+    private fun serve(path: String): WebResourceResponse = try {
+        val rel = path.removePrefix("/")
+        if (rel.contains("..") || !(rel.startsWith("capri/") || rel.startsWith("android/"))) throw SecurityException(rel)
+        val type = when (rel.substringAfterLast('.', "").lowercase()) {
+            "html" -> "text/html"
+            "js", "mjs" -> "text/javascript"
+            "css" -> "text/css"
+            "json" -> "application/json"
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "woff2" -> "font/woff2"
+            else -> "application/octet-stream"
+        }
+        WebResourceResponse(type, if (type.startsWith("text/")) "utf-8" else null, assets.open(rel)).apply {
+            responseHeaders = mapOf("Cache-Control" to "no-cache")
+        }
+    } catch (e: Exception) {
+        WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), "".byteInputStream())
+    }
+
+    private inner class Bridge {
+        /** The app's language and what she calls you. */
+        @JavascriptInterface
+        fun info(): String = JSONObject()
+            .put("lang", Lang.current(this@PageActivity))
+            .put("name", CapriSettings.name(this@PageActivity))
+            .put("game", intent.getStringExtra(EXTRA_GAME) ?: "") // (1.11.0) straight into one, from the Juegos tab
+            .toString()
+
+        /** Your chat history, oldest first. */
+        @JavascriptInterface
+        fun chatlog(): String = ChatLog.all(this@PageActivity).toString()
+
+        @JavascriptInterface
+        fun clearChatlog() = ChatLog.clear(this@PageActivity).let { }
+
+        /** «Reportar» on one of her answers (Google Play's rule for AI-made content): what you said and
+         *  what she answered go to Emma, like a bug report but without the app's log. Answers "ok",
+         *  "rate", "off", "bad" or "net" to the page's capriReported(). */
+        @JavascriptInterface
+        fun reportReply(q: String, a: String) {
+            val text = "[Respuesta de la IA reportada]\nTú: ${q.take(300)}\nCapri: ${a.take(650)}"
+            Report.send(this@PageActivity, text, withLog = false) { r ->
+                web?.evaluateJavascript("window.capriReported && capriReported(${JSONObject.quote(r)})", null)
+            }
+        }
+
+        /** A game's result, so she can bring it up later over your screen (games.js). */
+        @JavascriptInterface
+        fun played(json: String) {
+            val p = getSharedPreferences("games", Context.MODE_PRIVATE)
+            p.edit().putString("last", json.take(400)).apply()
+        }
+
+        /** (1.11.0) her neurodanzas, newest first; and you watched one (rated 1 to 3, or 0). */
+        @JavascriptInterface
+        fun neuroList(): String = Neuro.all(this@PageActivity).toString()
+
+        @JavascriptInterface
+        fun neuroSeen(id: String, rating: Int) = Neuro.seen(this@PageActivity, id, rating)
+
+        /** (1.12.0, community: "neurodanzas sin sonido") her line of the scene, in her voice (when she's on). */
+        @JavascriptInterface
+        fun say(text: String): Boolean {
+            val ears = CapriService.current?.ears ?: return false
+            ears.say(text.take(400), Lang.current(this@PageActivity), org.json.JSONObject().put("id", "bd").put("kind", "answer"))
+            return true
+        }
+
+        @JavascriptInterface
+        fun hush() { CapriService.current?.ears?.hushVoice("bd") }
+
+        @JavascriptInterface
+        fun haptic() = runOnUiThread { web?.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP) }
+
+        @JavascriptInterface
+        fun done() = runOnUiThread { finish() }
+    }
+
+    companion object {
+        private const val HOST = "appassets.androidplatform.net"
+        const val EXTRA_PAGE = "page"
+        const val EXTRA_GAME = "game"
+        private val PAGES = setOf("chatlog", "games", "neuro")
+
+        fun open(context: Context, page: String, game: String? = null) {
+            context.startActivity(Intent(context, PageActivity::class.java).putExtra(EXTRA_PAGE, page).putExtra(EXTRA_GAME, game)
+                .addFlags(if (context is Activity) 0 else Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+
+        /** Her floating self hidden while you play in the app (on unless you turn it off). */
+        fun hideWhilePlaying(context: Context) = context.getSharedPreferences("games", Context.MODE_PRIVATE).getBoolean("hideCapri", true)
+        fun setHideWhilePlaying(context: Context, on: Boolean) = context.getSharedPreferences("games", Context.MODE_PRIVATE).edit().putBoolean("hideCapri", on).apply()
+    }
+}

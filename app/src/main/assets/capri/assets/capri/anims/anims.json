@@ -1,0 +1,412 @@
+{
+ "angry": {
+  "n": 4,
+  "w": 140,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "birthday": {
+  "n": 4,
+  "w": 146,
+  "h": 360,
+  "fps": 5,
+  "loop": true,
+  "kind": "stand"
+ },
+ "bored-tap": {
+  "n": 4,
+  "w": 440,
+  "h": 243,
+  "fps": 4,
+  "loop": true,
+  "kind": "lie"
+ },
+ "bye": {
+  "n": 4,
+  "w": 157,
+  "h": 360,
+  "fps": 8,
+  "loop": false,
+  "kind": "stand"
+ },
+ "charge": {
+  "n": 4,
+  "w": 139,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "stand"
+ },
+ "cry": {
+  "n": 4,
+  "w": 188,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "sit"
+ },
+ "dance": {
+  "n": 8,
+  "w": 233,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "dizzy": {
+  "n": 4,
+  "w": 206,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "sit"
+ },
+ "drained": {
+  "n": 4,
+  "w": 173,
+  "h": 360,
+  "fps": 6,
+  "loop": false,
+  "kind": "stand"
+ },
+ "eat": {
+  "n": 4,
+  "w": 183,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "sit"
+ },
+ "game-bluff": {
+  "n": 4,
+  "w": 131,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-cheer": {
+  "n": 8,
+  "w": 215,
+  "h": 360,
+  "fps": 10,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-facepalm": {
+  "n": 4,
+  "w": 150,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-hello": {
+  "n": 4,
+  "w": 143,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-hesitate": {
+  "n": 4,
+  "w": 172,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-idle": {
+  "n": 4,
+  "w": 141,
+  "h": 360,
+  "fps": 4,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-laugh": {
+  "n": 4,
+  "w": 164,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-paddle": {
+  "n": 4,
+  "w": 238,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-pout": {
+  "n": 4,
+  "w": 175,
+  "h": 360,
+  "fps": 5,
+  "loop": true,
+  "kind": "sit"
+ },
+ "game-shock": {
+  "n": 4,
+  "w": 164,
+  "h": 360,
+  "fps": 10,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-shrug": {
+  "n": 4,
+  "w": 150,
+  "h": 360,
+  "fps": 5,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-smug": {
+  "n": 4,
+  "w": 144,
+  "h": 360,
+  "fps": 4,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-think": {
+  "n": 4,
+  "w": 144,
+  "h": 360,
+  "fps": 4,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-tilt": {
+  "n": 4,
+  "w": 169,
+  "h": 360,
+  "fps": 10,
+  "loop": true,
+  "kind": "stand"
+ },
+ "game-watch": {
+  "n": 4,
+  "w": 440,
+  "h": 267,
+  "fps": 4,
+  "loop": true,
+  "kind": "lie"
+ },
+ "game-zone": {
+  "n": 4,
+  "w": 178,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "gamer-play": {
+  "n": 4,
+  "w": 331,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "sit"
+ },
+ "gamer-watch": {
+  "n": 6,
+  "w": 440,
+  "h": 320,
+  "fps": 6,
+  "loop": true,
+  "kind": "lie"
+ },
+ "guitar": {
+  "n": 8,
+  "w": 250,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "hack": {
+  "n": 4,
+  "w": 145,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "hug-rock": {
+  "n": 4,
+  "w": 196,
+  "h": 360,
+  "fps": 4,
+  "loop": true,
+  "kind": "sit"
+ },
+ "keyboard": {
+  "n": 4,
+  "w": 440,
+  "h": 299,
+  "fps": 2,
+  "loop": true,
+  "kind": "lie"
+ },
+ "laugh": {
+  "n": 4,
+  "w": 158,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "lean-nails": {
+  "n": 4,
+  "w": 140,
+  "h": 360,
+  "fps": 4,
+  "loop": true,
+  "kind": "stand"
+ },
+ "listen": {
+  "n": 4,
+  "w": 142,
+  "h": 360,
+  "fps": 5,
+  "loop": true,
+  "kind": "stand"
+ },
+ "love": {
+  "n": 4,
+  "w": 144,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "stand"
+ },
+ "music": {
+  "n": 4,
+  "w": 328,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "sit"
+ },
+ "party": {
+  "n": 8,
+  "w": 280,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "phone": {
+  "n": 4,
+  "w": 440,
+  "h": 343,
+  "fps": 4,
+  "loop": true,
+  "kind": "lie"
+ },
+ "sandevistan": {
+  "n": 6,
+  "w": 373,
+  "h": 360,
+  "fps": 10,
+  "loop": false,
+  "kind": "stand"
+ },
+ "scan": {
+  "n": 4,
+  "w": 139,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "stand"
+ },
+ "selfie": {
+  "n": 4,
+  "w": 136,
+  "h": 360,
+  "fps": 4,
+  "loop": true,
+  "kind": "stand"
+ },
+ "shy": {
+  "n": 4,
+  "w": 140,
+  "h": 360,
+  "fps": 6,
+  "loop": true,
+  "kind": "stand"
+ },
+ "sleep": {
+  "n": 4,
+  "w": 414,
+  "h": 360,
+  "fps": 3,
+  "loop": true,
+  "kind": "curl"
+ },
+ "stream": {
+  "n": 4,
+  "w": 177,
+  "h": 360,
+  "fps": 5,
+  "loop": true,
+  "kind": "stand"
+ },
+ "stretch": {
+  "n": 4,
+  "w": 155,
+  "h": 360,
+  "fps": 4,
+  "loop": true,
+  "kind": "stand",
+  "body": 0.938
+ },
+ "surprised": {
+  "n": 4,
+  "w": 134,
+  "h": 360,
+  "fps": 8,
+  "loop": false,
+  "kind": "stand",
+  "body": 0.858
+ },
+ "think": {
+  "n": 4,
+  "w": 140,
+  "h": 360,
+  "fps": 4,
+  "loop": true,
+  "kind": "stand"
+ },
+ "wake": {
+  "n": 4,
+  "w": 164,
+  "h": 360,
+  "fps": 6,
+  "loop": false,
+  "kind": "stand"
+ },
+ "wave": {
+  "n": 4,
+  "w": 147,
+  "h": 360,
+  "fps": 8,
+  "loop": true,
+  "kind": "stand"
+ },
+ "yawn": {
+  "n": 4,
+  "w": 140,
+  "h": 360,
+  "fps": 6,
+  "loop": false,
+  "kind": "stand"
+ }
+}

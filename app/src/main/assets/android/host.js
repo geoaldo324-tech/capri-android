@@ -1,0 +1,2316 @@
+// window.host for Android: what preload.js + main.js give her renderer on the desktop, here.
+//
+// The renderer (src/renderer, copied unchanged) only ever talks to `window.host`. On the desktop
+// that's Electron's IPC to main.js; here it's this file, which does main.js's job in the page
+// itself (her settings, her chat through the desktop's own llm.js and ollama.js, her menu) and asks
+// Kotlin (HostBridge.kt) for what only Android can do: storage, the network without CORS, intents,
+// the overlay window, the phone's state, Claude's events from the hook server.
+//
+// The order and the names follow main.js's registerIpc(), so the two can be read side by side.
+
+import './compat.js'; // (first: what an old WebView lacks, before anything uses it)
+import { call, send, on, emit } from './native.js';
+import { nativeFetch } from './fetch.js';
+import { load, env, electron } from './cjs.js';
+import './upstream/ollama.js';
+import './upstream/llm.js';
+import './upstream/labels.js';
+import './upstream/demo-sequence.js';
+import './upstream/launch.js';
+import { Menu } from './menu.js';
+import { QuickMenu } from './quick.js';
+import { Touch } from './touch.js';
+import './phone-lines.js'; // her desktop words said the phone's way (before her page reads them)
+import { localAnswer } from './local-brain.js'; // (1.12.5) her own words with no internet at all (Su mente)
+import './setup.js'; // her setup without a terminal (before app.js builds it)
+import { Notes } from './notes.js';
+import './wink.js'; // what she says, also in her notification
+import { followTurns } from './turn.js';
+import { listen } from './listen.js';
+import { tweak } from './phone-tweaks.js';
+import { iconMode } from './icon.js';
+import { floatMode } from './float.js';
+import { longMemory } from './memory.js';
+import { phoneCare } from './phone-care.js';
+import { moods, cutin } from './moods.js';
+import { wardrobe } from './wardrobe.js';
+import { poses } from './poses.js';
+import { wedding } from './wedding.js';
+import { reactions } from './react.js';
+import { hearing } from './hearing.js';
+import { agenda } from './agenda.js';
+import { sharing } from './share.js';
+import { translating } from './translate.js';
+import { coaching } from './coach.js';
+import { streaming } from './stream.js';
+import { birthday } from './birthday.js';
+import { reading } from './reading.js';
+import { keepAsking } from './away.js';
+import { chatLog } from './chatlog.js';
+import { shaking } from './shake.js';
+import { chatVoice } from './chatvoice.js'; // (1.11.7) her chat answers out loud
+import { chatAsks } from './asks.js';
+import { laser } from './laser.js';
+import { saver } from './saver.js';
+import { autoDress } from './autodress.js';
+import { iconFaces } from './icon-faces.js';
+import { checkIn } from './checkin.js';
+import { typing } from './typing.js';
+import { appChat } from './appchat.js';
+import { createDuo } from './duo.js'; // (1.13.0) «Platicar con otra IA»: a guest brain talks with her
+import { createSteps } from './steps.js'; // (1.13.0) orders of several steps, one by one
+import { createAutonomy } from './autonomy.js'; // (1.13.0) «Ella actúa sola»: her eyes open, her own initiative
+import { sleepMode } from './sleep.js';
+import { reactMode } from './reactmode.js';
+import { neuroDances } from './neuro.js';
+import { twins } from './twin.js';
+import { voiceLines } from './voicelines.js'; // (1.11.0) Capri Voice V8: her recorded phrases
+import { watchGpu } from './gpu.js'; // (before app.js builds her: her picture kept alive, 2D without WebGL)
+
+const llm = load('llm');
+// NVIDIA's (build.nvidia.com): a free key and many models to choose from. The desktop doesn't have
+// it, so it's added here (llm.js talks to any OpenAI-style server the same way).
+llm.PROVIDERS.nvidia ??= { label: 'NVIDIA', url: 'https://integrate.api.nvidia.com/v1', env: 'NVIDIA_API_KEY' };
+// (1.12.5) her brain on this phone: no server at all — she answers from her own lines and what she
+// remembers (local-brain.js). A brain like any other to pick (her menu's «Modelo de IA»); chatSend
+// answers it here, before any network, and chatSend also falls back on it when a chat dies offline.
+llm.PROVIDERS.local ??= { label: 'Sin internet', local: true };
+const LOCAL_MODEL = 'Sin internet';
+
+// (1.13.0) a real model ON this phone (LiteRT-LM; LiteRtBrain.kt): downloaded from Su mente,
+// runs with no network at all, thinks (unlike her phrase brain). A brain like any other to
+// pick — and, when it's downloaded, the first fallback when a chat dies offline.
+llm.PROVIDERS.litert ??= { label: 'En el teléfono (LiteRT)', local: true };
+const LITERT_MODEL = 'En el teléfono';
+let litertState = null; // { ready, model, at }: asked of Android now and then, never per message
+async function litertReady() {
+  if (!litertState || Date.now() - litertState.at > 30000) {
+    const s = await call('litert:state').catch(() => null);
+    litertState = { ready: Boolean(s?.ready), model: s?.model || null, at: Date.now() };
+  }
+  return litertState;
+}
+// one whole answer from the model on this phone (LiteRtBrain.kt rebuilds its conversation from
+// the messages each time: the system one, the turns so far, the last thing said)
+async function litertChat(messages, signal) {
+  const res = await call('litert:chat', { messages });
+  if (signal?.aborted) throw Object.assign(new Error('aborted'), { code: 'abort' });
+  return String(res?.text || '');
+}
+
+// (1.12.5) the chat reached nothing: no network at all, or the ask died on the way (an answer from
+// a server — an HTTP status — is never this, however it reads). The same words her FRIENDLY tables
+// below use for it, plus the browser's own word on the phone's connection.
+const OFFLINE_WORDS = /network|fetch|resolve|offline|connect|socket|host|internet|unreachable|timed? ?out|timeout|dns|econn/i;
+function offlineDown(err) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  if (err && typeof err.status === 'number') return false; // a server answered: not offline
+  return OFFLINE_WORDS.test(String(err?.message || err || chatError || ''));
+}
+const ollama = load('ollama');
+const { TRAY, LANGS } = load('labels');
+const demoSteps = load('demo-sequence');
+const launch = load('launch');
+
+// launch.js opens its links through Electron's shell: here, through Android
+electron.shell.openExternal = (url) => call('open:url', { url: String(url) });
+electron.app.getApplicationNameForProtocol = (proto) => (proto === 'roblox://' && device.roblox ? 'Roblox' : '');
+
+const PORT = 47823;
+const OLLAMA_SITE = 'https://ollama.com';
+
+// main.js's config.js DEFAULTS, plus what only Android has
+const DEFAULTS = {
+  scale: 0.6, muted: false, volume: 0.7, lang: 'auto', displayId: null, wander: true, possess: true, visible: true,
+  welcomed: false, assistant: 'auto', linked: false, chatModel: null, provider: 'pollinations', apiKeys: {},
+  customUrl: '', claudeCwd: null, userName: '', persona: '', myLines: [], memories: [], claudeMode: 'default',
+  claude: true, rest: 'corner', theme: 'nightcity', motion: 'auto', motionAsked: false, render: 'auto', follow: true,
+  jealous: true, closePages: true, reminders: [], bond: null, pcReact: true, watchScreen: false, reactMode: false, neuroAt: 0, lookAsked: false, gamer: false,
+  // Android
+  ollamaHost: '127.0.0.1:11434', // Ollama in Termux on the phone, or your PC's address on your network
+  hooksCopied: false,            // the Termux command to plug her in was handed to you
+  ghost: false,                  // a ghost: on screen, but your touches go through her to your apps
+  lively: 'normal',              // how often she moves on her own: calm, normal, restless
+  lan: false,                    // the hook server also listens on your Wi-Fi (a PC's Claude Code can reach her)
+  icon: false,                   // icon mode: only her mask on screen, still talking (icon.js)
+  batteryAlerts: true,           // she tells you when it's charged (to batteryFull %) or low (batteryLow %): phone-care.js
+  batteryFull: 100,
+  batteryLow: 15,
+  breaks: true,                  // a break after breakHours on the phone without putting it down
+  breakHours: 2,
+  iconAt: null,                  // where you left it, { x, y } as parts of the screen
+  float: false,                  // without gravity: she stays where you put her (float.js)
+  floatAt: null,                 // where that was, { x, y } as parts of the screen
+  longMemory: true,              // she notes down what matters about you after a chat (memory.js)
+  // (1.13.0) her phone, more of it
+  controlSteps: true,            // orders of several steps (steps.js); its switch is in the app's Settings
+  actsAlone: false,              // «Ella actúa sola» (autonomy.js): her eyes open + her own initiative; off again every start, like her live look
+  aloneApps: true,               // acting alone she may open apps…
+  aloneTap: true,                // …tap things…
+  aloneScroll: true,             // …and scroll; typing alone stays off unless you turn it on
+  aloneType: false,
+  duoProvider: 'local',          // «Platicar con otra IA» (duo.js): who the guest is, and what it's like
+  duoName: '',
+  duoAbout: '',
+  litertModel: '',               // (1.13.0) the downloaded model on this phone that's on (LiteRtBrain.kt)
+};
+
+// setup.js's
+const MODELS = [
+  { name: 'gemma3:4b', bytes: 3.3e9 },
+  { name: 'llama3.2', bytes: 2.0e9 },
+];
+const KEY_PAGES = {
+  groq: 'https://console.groq.com/keys',
+  gemini: 'https://aistudio.google.com/apikey',
+  openrouter: 'https://openrouter.ai/keys',
+  openai: 'https://platform.openai.com/api-keys',
+  mistral: 'https://console.mistral.ai/api-keys',
+  deepseek: 'https://platform.deepseek.com/api_keys',
+  nvidia: 'https://build.nvidia.com/settings/api-keys',
+};
+const ASSISTANTS = {
+  claude: { name: 'Claude Code', help: 'https://code.claude.com/docs/en/quickstart' },
+  codex: { name: 'Codex', help: 'https://learn.chatgpt.com/docs/hooks' },
+  agy: { name: 'Antigravity', help: 'https://antigravity.google/docs/hooks' },
+};
+
+// What Android can't do on the desktop's terms: the renderer gets the same "no" a Mac would.
+const noop = () => {};
+
+// ---------- her settings (config.js) ----------
+
+let cfg = { ...DEFAULTS };
+let device = { lang: 'en', ram: 4 * 1024 ** 3, sdk: 0, model: '', ip: null, termux: false };
+
+async function loadConfig() {
+  const [saved, info] = await Promise.all([call('config:load').catch(() => null), call('device:info').catch(() => null)]);
+  cfg = { ...DEFAULTS, ...(saved || {}) };
+  // her live look needs Android's yes again after each start: off until you turn it on
+  if (cfg.watchScreen) cfg.watchScreen = false;
+  if (cfg.gamer) cfg.gamer = false; // her gamer mode is for one session of play
+  if (cfg.actsAlone) cfg.actsAlone = false; // (1.13.0) acting alone too: its button again, each time she starts
+  if (cfg.streaming) cfg.streaming = false; // (and streaming mode for one live)
+  if (info) device = { ...device, ...info };
+  env.OLLAMA_HOST = cfg.ollamaHost || DEFAULTS.ollamaHost;
+}
+
+function saveConfig(patch) {
+  cfg = { ...cfg, ...patch };
+  env.OLLAMA_HOST = cfg.ollamaHost || DEFAULTS.ollamaHost;
+  send('config:save', cfg);
+  return cfg;
+}
+
+const activeAssistant = () => {
+  const id = ASSISTANTS[cfg.assistant] ? cfg.assistant : 'claude';
+  return { id, ...ASSISTANTS[id] };
+};
+
+// 'auto' -> the phone's language if she speaks it, English otherwise
+function resolveLang(setting) {
+  if (LANGS.includes(setting)) return setting;
+  for (const tag of [device.lang, ...(navigator.languages || [])]) {
+    const base = String(tag || '').toLowerCase().split(/[-_]/)[0];
+    if (LANGS.includes(base)) return base;
+  }
+  return 'en';
+}
+
+const GAMER_SCALE = 0.35;
+
+function rendererConfig() {
+  const { apiKeys, ...rest } = cfg;
+  // gamer mode: small, still, in a corner, out of the game's way (her settings stay as they were)
+  const gamer = cfg.gamer ? { scale: Math.min(cfg.scale || 0.6, GAMER_SCALE), wander: false, jealous: false, pcReact: false } : {};
+  // without gravity: she stays where you put her (float.js), so she doesn't go off on her own either
+  const still = cfg.float ? { wander: false } : {};
+  return { ...rest, ...still, ...gamer, keys: Object.keys(apiKeys || {}), assistant: activeAssistant().id, lang: resolveLang(rest.lang), langSetting: rest.lang, floorGap: 0 };
+}
+
+const listeners = { config: new Set(), command: new Set() };
+const sub = (set) => (fn) => {
+  set.add(fn);
+  return () => set.delete(fn);
+};
+
+function updateConfig(patch) {
+  const wasWatching = Boolean(cfg.watchScreen);
+  saveConfig(patch);
+  if ('ghost' in patch || 'gamer' in patch) touch.ghost = Boolean(cfg.ghost || cfg.gamer);
+  if ('ghostCards' in patch) touch.ghostCards = Boolean(cfg.ghostCards);
+  if ('scale' in patch) setTimeout(() => notes?.place(), 0); // her notice card sits just below her height
+  if ('gamer' in patch) setTimeout(() => { gamerMode(Boolean(cfg.gamer)); closet?.style(); }, 0);
+  // her live look (Eyes.kt): Android asks you when it goes on; a "no" turns it back off
+  if ('watchScreen' in patch && Boolean(cfg.watchScreen) !== wasWatching) {
+    // an AI that can't see: no live look (she says why), and Android never asks
+    (cfg.watchScreen ? cantSee().catch(() => null) : Promise.resolve(null)).then((blind) => {
+      if (blind && cfg.watchScreen) {
+        updateConfig({ watchScreen: false });
+        const t = window.dev?.brain?.t?.look;
+        const line = blind.code === 'noai' ? t?.noAI : t?.noVision?.replace('{model}', blind.model || '…');
+        if (line) window.dev?.panel?.say({ kind: 'info', face: 'aside', line, hold: 9000 });
+        return;
+      }
+      if (Boolean(cfg.watchScreen) !== Boolean(patch.watchScreen)) return; // changed again meanwhile
+      call('look:live', { on: Boolean(cfg.watchScreen) }).then((ok) => {
+        if (cfg.watchScreen && !ok) updateConfig({ watchScreen: false });
+      }, () => cfg.watchScreen && updateConfig({ watchScreen: false }));
+    });
+  }
+  if ('visible' in patch) send('notify:update', { visible: cfg.visible });
+  if ('lan' in patch) send('bridge:lan', { on: Boolean(cfg.lan) });
+  const out = rendererConfig();
+  for (const fn of listeners.config) fn(out);
+  return out;
+}
+
+function sendCommand(name, payload = {}) {
+  for (const fn of listeners.command) fn({ name, ...payload });
+}
+
+// ---------- her memory of your chats ----------
+
+let memory = {};
+// (1.10.0, "la memoria de mi Capri desapareció de la nada") nothing is written until memory.json
+// was read: a save before that (or after a read that failed) wrote only the new bits over everything
+let memoryRead = false;
+let memoryEarly = {};
+const readMemory = () => memory;
+function saveMemory(patch) {
+  memory = { ...memory, ...patch };
+  if (!memoryRead) {
+    memoryEarly = { ...memoryEarly, ...patch };
+    return;
+  }
+  send('memory:save', memory);
+}
+async function loadMemory() {
+  for (let i = 0; i < 4; i++) {
+    try {
+      const got = await call('memory:load');
+      memory = { ...(got && typeof got === 'object' ? got : {}), ...memoryEarly };
+      memoryRead = true;
+      if (Object.keys(memoryEarly).length) send('memory:save', memory);
+      memoryEarly = {};
+      return;
+    } catch (err) {
+      console.warn(`[capri] memory:load: ${err.message}`);
+      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    }
+  }
+  // still not read: she keeps this session's in memory only, and never writes over the file
+}
+function forgetChats() {
+  llm.resetClaude();
+  saveMemory({ history: [], claude: null, facts: [], phrases: [], feeling: null, last: null, seen: null });
+  sendCommand('forget');
+}
+
+// ---------- her hooks: Claude Code in Termux, or on a PC on your network ----------
+
+// Termux can't be written to from here: the command that plugs her in goes on your clipboard, and
+// Termux opens if it's there. It fetches her own hook (the desktop's, unchanged) from her server.
+function hooksCommand() {
+  const flag = { claude: '', codex: ' codex', agy: ' agy' }[activeAssistant().id];
+  return `curl -fsS http://127.0.0.1:${PORT}/install.sh | sh -s --${flag}`;
+}
+function hooksStatus() {
+  return { installed: Boolean(cfg.linked || cfg.hooksCopied), file: '~/.claude/settings.json (Termux)' };
+}
+async function runHooks(action, { quiet = false } = {}) {
+  let outcome;
+  if (action === 'install') {
+    const res = await call('hooks:copy', { command: hooksCommand() }).catch((err) => ({ ok: false, error: err.message }));
+    outcome = res?.ok === false ? { action, ok: false, error: res.error } : { action, ok: true, file: hooksStatus().file };
+    if (outcome.ok) updateConfig({ hooksCopied: true });
+  } else {
+    await call('hooks:copy', { command: `curl -fsS http://127.0.0.1:${PORT}/install.sh | sh -s -- --uninstall` }).catch(noop);
+    updateConfig({ hooksCopied: false, linked: false });
+    outcome = { action, ok: true, file: hooksStatus().file };
+  }
+  if (!quiet) sendCommand('hooks', outcome);
+  return outcome;
+}
+
+// ---------- her chat (main.js) ----------
+
+let chatModels = null;
+let chatError = null;
+let chatErrorCode = null;
+let cloud = { at: 0, account: null, free: [] };
+const chats = new Map();
+
+// Not for chatting (speech, images, filters) or slow to say a first word (models that "think"
+// first, out of sight: she'd look frozen for a long while), and the quick, good ones first.
+const NOT_CHAT = /whisper|tts|speech|audio|transcri|guard|embed|moderation|image|imagen|dall|vision-only|search|roblox|evil|uncensored|bidara|midijourney|rtist|compound|orpheus|playai|allam|prompt-guard|safeguard/i;
+const SLOW = /reason|think|r1\b|-r1|o1|o3|o4|qwq|deepseek-r|gpt-oss-120|large|405b|pro\b|opus/i;
+const QUICK = [/^openai-fast$/, /^openai$/, /llama-3\.3-70b/, /llama-3\.1-8b-instant/, /gemini-[\d.]+-flash(?!-lite)/, /gemini.*flash/, /gpt-4o-mini|gpt-4\.1-mini|gpt-4\.1-nano/, /mistral-small|mistral$/, /deepseek-chat|deepseek-v3/, /llama/i];
+// NVIDIA lists 80-odd models, most of them not to chat with (search, safety filters, code, pictures,
+// translating…): only the ones to chat with stay, and the ones that see pictures (to look with).
+// Its quick, good ones for chatting first.
+const NV_SKIP = /embed|guard|safety|reward|parse|nvclip|retriever|rerank|detector|calibration|riva|translate|deplot|kosmos|fuyu|\bvila\b|neva|cosmos|code|coder|starcoder|chatqa|palmyra-(fin|med)|diffusion|omni|recurrent|gemma-2b|llama2|muse|bolt|reasoning/i;
+const NV_QUICK = [/deepseek-v[\d.]+-flash/, /glm-[\d.]+-flash/, /gemma-4/, /kimi-k2/, /minimax-.*flash/, /nemotron-[\d.]+-lightning/, /mistral-large-4/, /nemotron-3-super/, /gemma-3-12b/, /llama-3\.1-nemotron-70b/, /mistral-nemo/, /gpt-oss/];
+const NV_SEES = [/llama-3\.2-90b-vision/, /nemotron-[\d.]+-super-vl/, /gemma-3-12b/, /phi-3-vision/, /gemma-3-4b/];
+const nvidiaModels = (list) => list.filter((m) => !NV_SKIP.test(m));
+// (1.12.0) Models the service closed ("models/gemini-2.5-flash is no longer available to new users"): left out
+// from then on, on this phone. Before, a report showed it asked first on every message, failing, before
+// the next model (or the free AI) answered: Gemini felt slow for nothing.
+const RETIRED_KEY = 'capri.ai.retired';
+const retired = (() => { try { return new Set(JSON.parse(localStorage.getItem(RETIRED_KEY) || '[]')); } catch { return new Set(); } })();
+function retire(model) {
+  if (!model || retired.has(model)) return;
+  retired.add(model);
+  try { localStorage.setItem(RETIRED_KEY, JSON.stringify([...retired].slice(-40))); } catch {}
+}
+// the one the service says to use instead ("use models/gemini-3.8-flash"), if it's on the list
+function successor(err, list) {
+  const named = /\buse (?:models\/)?([\w.-]+-[\w.-]+)/i.exec(String(err?.message || ''))?.[1];
+  if (!named || !list) return null;
+  return list.find((m) => m === named || m === `models/${named}` || m.replace(/^models\//, '') === named) || null;
+}
+function rankModels(list, provider = cfg.provider) {
+  const nv = provider === 'nvidia';
+  const open = list.filter((m) => !retired.has(m));
+  if (open.length) list = open;
+  const usable = list.filter((m) => !NOT_CHAT.test(m) && !(nv && /vision|[-_]vl\b|phi-3-vision/i.test(m)));
+  const score = (m) => {
+    const q = (nv ? NV_QUICK : QUICK).findIndex((re) => re.test(m));
+    return (SLOW.test(m) ? 100 : 0) + (q < 0 ? 50 : q);
+  };
+  return (usable.length ? usable : list).slice().sort((a, b) => score(a) - score(b));
+}
+
+function pickModel(c = cfg) {
+  if (!chatModels?.length) return null;
+  // (1.12.0, Emma) the model you picked under that AI's key (the app's AI screen), over hers
+  const mine = c.models?.[c.provider];
+  if (mine && chatModels.includes(mine) && !retired.has(mine)) return mine;
+  if (chatModels.includes(c.chatModel) && !NOT_CHAT.test(c.chatModel) && !retired.has(c.chatModel)) return c.chatModel; // (1.10.0: not a voice model picked by mistake, Groq's orpheus)
+  if (c.provider === 'ollama') return chatModels.find((m) => !ollama.isCloud(m)) || chatModels[0];
+  return rankModels(chatModels)[0];
+}
+
+// Your keys, opened by Android's Keystore once and kept in her page's memory (1.9.0): before, every
+// message (and every try at another model) asked the Keystore again for each key, one after the
+// other, which an old phone takes its time over.
+const opened = new Map(); // sealed -> plain
+async function openKeys(apiKeys = {}) {
+  const pairs = await Promise.all(Object.entries(apiKeys).map(async ([id, v]) => {
+    if (!v) return [id, ''];
+    if (opened.has(v)) return [id, opened.get(v)];
+    const plain = await call('keys:open', { value: v }).catch(() => null);
+    if (plain != null) opened.set(v, plain);
+    return [id, plain || ''];
+  }));
+  return Object.fromEntries(pairs);
+}
+
+// The way to her AI kept open (1.9.0): a phone's network takes a while to make a new secure
+// connection (up to a second or more), so when her chat opens and she hasn't talked with it for a
+// few minutes, it's made then, while you type, and your message goes down it.
+const linkUsed = new Map(); // provider -> when
+const KEEP_LINK = 4 * 60 * 1000; // (Android keeps an idle one about 5 minutes)
+function warmLink(provider = cfg.provider) {
+  const p = llm.PROVIDERS[provider];
+  if (!p?.url || p.local || provider === 'custom') return;
+  if (Date.now() - (linkUsed.get(provider) || 0) < KEEP_LINK) return;
+  linkUsed.set(provider, Date.now());
+  llmConfig().then((conf) => {
+    const key = conf.apiKeys?.[provider];
+    return nativeFetch(p.modelsUrl || `${p.url}/models`, {
+      headers: key ? { authorization: `Bearer ${key}` } : {},
+      signal: AbortSignal.timeout(8000),
+    });
+  }).then((r) => r.text()).catch(noop);
+}
+// (1.11.8, Emma: "si tienen más de una clave API, cambia a la que sigue") several keys for one service
+// (pasted together, separated by commas, spaces or lines): one that ran out of quota, or that the service
+// turned down, rests, and the next one answers instead.
+const keysOf = (plain) => String(plain || '').split(/[\s,;]+/).filter(Boolean);
+const keyTired = new Map(); // key -> until (ms)
+const keyFree = (k) => (keyTired.get(k) || 0) <= Date.now();
+const pickKey = (plain) => {
+  const list = keysOf(plain);
+  return list.find(keyFree) || list[0] || '';
+};
+const llmConfig = async (c = cfg) => {
+  const keys = await openKeys(c.apiKeys);
+  for (const id of Object.keys(keys)) keys[id] = pickKey(keys[id]);
+  return { ...c, apiKeys: keys };
+};
+// true when another key of that service can answer now (the one used rests)
+async function swapKey(c, used, err) {
+  if (!used || !c.apiKeys?.[c.provider]) return false;
+  const list = keysOf((await openKeys({ k: c.apiKeys[c.provider] })).k);
+  if (list.length < 2) return false;
+  const msg = String(err?.message || '');
+  const refused = err?.status === 401 || err?.status === 403 || /api key not valid|invalid api key|unauthori|permission denied/i.test(msg);
+  const spent = err?.status === 429 || /quota|exhausted|billing|rate.?limit|too many requests/i.test(msg);
+  if (!refused && !spent) return false;
+  const retry = Number(/retry(?:[ _-]?delay|[ _-]?after| in)["'\s:]*([\d.]+)\s*s/i.exec(msg)?.[1]);
+  const ms = refused ? 24 * 3600e3 : retry > 0 ? retry * 1000 + 2000 : /per ?day|daily|PerDay|quota|exhausted|billing/i.test(msg) ? 3 * 3600e3 : 90e3;
+  keyTired.set(used, Date.now() + ms);
+  const next = list.find(keyFree);
+  if (!next) return false;
+  send('log', { level: 'W', text: `${c.provider}: key ${list.indexOf(used) + 1} ${refused ? 'refused' : 'out of quota'}, key ${list.indexOf(next) + 1} answers` });
+  return true;
+}
+
+// (1.11.8) the free online AI takes one request at a time per phone ("Your previous request is still
+// running"): hers go one after the other, never two at once (the second was turned down, and her chat stuck)
+let freeLane = Promise.resolve();
+function inLane(provider, run) {
+  if (provider !== 'pollinations') return run();
+  const go = freeLane.then(run, run);
+  freeLane = go.catch(noop);
+  return go;
+}
+
+// The provider's models, kept a while: asked of the server every time her chat opened, a slow
+// network made her wait for it (or say she had no AI when it timed out once).
+let modelsFor = null; // { key, at, list }
+const KEEP_MODELS = 10 * 60 * 1000;
+async function refreshModels({ fresh = false } = {}) {
+  // (1.12.5) her brain on this phone has no server to ask: its one "model" is always there
+  if (cfg.provider === 'local') {
+    chatError = null;
+    chatErrorCode = null;
+    chatModels = [LOCAL_MODEL];
+    return chatModels;
+  }
+  // (1.13.0) the downloaded model on this phone: no server either — there when it's downloaded
+  if (cfg.provider === 'litert') {
+    const s = await litertReady();
+    chatError = s.ready ? null : 'nomodel';
+    chatErrorCode = s.ready ? null : 'nomodel';
+    chatModels = s.ready ? [s.model || LITERT_MODEL] : [];
+    return chatModels;
+  }
+  const key = JSON.stringify([cfg.provider, cfg.apiKeys?.[cfg.provider] || '', cfg.customUrl || '', cfg.ollamaHost || '']);
+  if (!fresh && modelsFor?.key === key && Date.now() - modelsFor.at < KEEP_MODELS) {
+    chatModels = modelsFor.list;
+    return chatModels;
+  }
+  chatError = null;
+  chatErrorCode = null;
+  const list = await llm.models(cfg.provider, await llmConfig()).catch((err) => {
+    chatError = err.message;
+    chatErrorCode = err.code || null;
+    return null;
+  });
+  // a slow answer once (timed out): the list from a little while ago still holds
+  if (!list && modelsFor?.key === key && Date.now() - modelsFor.at < 6 * KEEP_MODELS && !/40[13]|invalid|unauthor/i.test(chatError || '')) {
+    chatModels = modelsFor.list;
+    return chatModels;
+  }
+  chatModels = list && cfg.provider === 'nvidia' ? nvidiaModels(list) : list;
+  if (chatModels?.length) modelsFor = { key, at: Date.now(), list: chatModels };
+  if (cfg.provider === 'ollama' && chatModels) refreshCloud();
+  return chatModels;
+}
+
+let cloudCheck = null;
+function refreshCloud(force = false) {
+  if (!force && Date.now() - cloud.at < 60000) return cloudCheck || Promise.resolve(cloud);
+  const at = Date.now();
+  cloud.at = at;
+  cloudCheck = (async () => {
+    const account = await ollama.account();
+    const free = account?.name ? await ollama.freeModels() : [];
+    cloud = { at, account, free };
+    return cloud;
+  })().finally(() => { cloudCheck = null; });
+  return cloudCheck;
+}
+
+// No first word this long from a server (not Ollama on your PC, which may be loading its model):
+// it's stuck, so the next model gets a go instead of her looking frozen.
+// (the free online one is slow on long messages: it gets longer)
+// (1.9.0: 40 → 25 s, and 80 → 60 s for the free one, which holds a message up to 45 s for its turn)
+const FIRST_WORD_MS = 20000; // (1.12.0: 25 → 20 s, "tarda mucho en responder")
+const FIRST_WORD_FREE_MS = 60000;
+
+// Models that ran out for now (429: too many asks a minute, or the free quota of the day, as
+// Gemini's free keys do after a few dozen): rested until they can answer again, the service's
+// other models tried meanwhile. Each Gemini model has its own quota, so another one often still answers.
+const tired = new Map(); // model -> until (ms)
+function rest(model, err) {
+  if (!model) return;
+  const msg = String(err?.message || '');
+  const retry = Number(/retry(?:[ _-]?delay|[ _-]?after| in)["'\s:]*([\d.]+)\s*s/i.exec(msg)?.[1]);
+  const daily = /per ?day|daily|PerDay|RPD|quota|exhausted|insufficient/i.test(msg);
+  const ms = retry > 0 ? retry * 1000 + 2000 : daily ? 3 * 3600 * 1000 : 90 * 1000;
+  tired.set(model, Date.now() + Math.min(ms, 6 * 3600 * 1000));
+}
+const isTired = (m) => (tired.get(m) || 0) > Date.now();
+// until when everything she could look or talk with is resting (0: something can answer)
+function aiResting(models) {
+  const list = models.filter(Boolean);
+  if (!list.length || list.some((m) => !isTired(m))) return 0;
+  return Math.min(...list.map((m) => tired.get(m)));
+}
+
+// 1.9.0: "sus servidores están saturados cada 2 o 3 respuestas, con cualquier modelo". When every
+// model of her AI is busy, the other AIs you gave her a key for answer instead (and the free one,
+// last), so she still answers; your AI stays hers, and is back next message.
+const BACKUP_FIRST_WORD_MS = 25000;
+// (1.11.8) no new word for this long once her answer started: it stopped coming (chatSend); and no answer
+// at all, whatever the tries, after this long
+const STALL_MS = 20000;
+const LONGEST_MS = 150000;
+const quiet = new Set(); // her own background asks (notes, braindances), not a message of yours
+const backupModels = new Map(); // provider -> { at, list }
+// (1.12.0, Emma: "tarda mucho en responder en el chat") her AI was swamped a moment ago (every model of it tried, a
+// backup answered): for a few minutes the AI that answered goes first, instead of waiting out her AI's models
+// again on every message; then her AI gets its turn back
+let swamped = null; // { provider, until, by }
+const SWAMPED_MS = 4 * 60 * 1000;
+async function chatWithFallback(c, messages, sendDelta, signal, streamed) {
+  const skip = swamped && swamped.provider === c.provider && swamped.until > Date.now() ? swamped.by : null;
+  try {
+    if (skip) throw Object.assign(new Error('swamped a moment ago'), { code: 'busy', skipped: true });
+    const text = await chatOnce(c, messages, sendDelta, signal, streamed);
+    if (swamped?.provider === c.provider) swamped = null;
+    return text;
+  } catch (err) {
+    if (signal.aborted || streamed() || !['busy', 'gone'].includes(err.code)) throw err;
+    const conf = await llmConfig(c);
+    const others = Object.keys(conf.apiKeys || {}).filter((id) => conf.apiKeys[id] && id !== c.provider && llm.PROVIDERS[id]?.url);
+    if (c.provider !== 'pollinations') others.push('pollinations');
+    if (skip && others.includes(skip)) others.sort((a, b) => (b === skip) - (a === skip));
+    for (const id of others) {
+      if (signal.aborted) break;
+      let models = backupModels.get(id);
+      if (!models || Date.now() - models.at > KEEP_MODELS) {
+        const list = await llm.models(id, conf).catch(() => null);
+        if (!list?.length) continue;
+        models = { at: Date.now(), list: id === 'nvidia' ? nvidiaModels(list) : list };
+        backupModels.set(id, models);
+      }
+      const model = rankModels(models.list, id).find((m) => !isTired(m));
+      if (!model) continue;
+      const inner = new AbortController();
+      const stop = () => inner.abort();
+      signal.addEventListener('abort', stop, { once: true });
+      const timer = setTimeout(() => { if (!streamed()) inner.abort(); }, BACKUP_FIRST_WORD_MS);
+      try {
+        const text = await inLane(id, () => llm.chat(id, conf, { model, messages }, sendDelta, inner.signal));
+        send('log', { level: 'W', text: `${c.provider} busy: ${id} (${model}) answered instead` });
+        if (!err.skipped) swamped = { provider: c.provider, until: Date.now() + SWAMPED_MS, by: id };
+        return text;
+      } catch (e) {
+        if (signal.aborted || streamed()) throw e;
+        if (e.code === 'busy') rest(model, e);
+        send('log', { level: 'W', text: `backup ${id} (${model}): ${String(e.message || e).slice(0, 120)}` });
+      } finally {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', stop);
+      }
+    }
+    // (nothing else answered: her own AI after all)
+    if (err.skipped && !signal.aborted) { swamped = null; return chatOnce(c, messages, sendDelta, signal, streamed); }
+    throw err;
+  }
+}
+
+// (1.13.0) one whole answer from a brain that isn't necessarily the one her chat is set to:
+// the guest of «Platicar con otra IA» (duo.js), her step planner (steps.js), her decisions
+// when she acts alone (autonomy.js). No streaming, no resting, and never a write to her own
+// chat's settings: the service's best model, once. Her phone brains answer here too — 'local'
+// from her lines, 'litert' from the model on the phone.
+async function brainCall(provider, messages, { model = null, signal = null } = {}) {
+  if (provider === 'local') {
+    const text = localAnswer(messages, { facts: readMemory().facts || [], name: cfg.userName || '' });
+    if (!text) throw new Error('her brain on this phone has nothing for that');
+    return text;
+  }
+  if (provider === 'litert') return litertChat(messages, signal);
+  const conf = await llmConfig({ ...cfg, provider });
+  const list = await llm.models(provider, conf).catch(() => null);
+  if (!list?.length) throw new Error(`no models for ${provider}`);
+  const ranked = provider === 'nvidia' ? nvidiaModels(list) : rankModels(list, provider);
+  const chosen = (model && ranked.includes(model)) ? model : ranked.find((m) => !isTired(m)) || ranked[0];
+  if (!chosen) throw new Error(`no model for ${provider}`);
+  const text = await inLane(provider, () => llm.chat(provider, conf, { model: chosen, messages }, () => {}, signal || new AbortController().signal));
+  if (!String(text ?? '').trim()) throw new Error('empty answer');
+  return text;
+}
+
+// (1.13.0) her brain splitting an order into steps (steps.js): JSON only, the small vocabulary
+// only; cleanPlan over there drops anything else she might invent. Her phrase brain can't plan
+// (steps.js splits what it recognises instead); the model on this phone can, offline.
+const STEP_PLAN_PROMPT = `Partes una orden en pasos para controlar un celular Android. Responde SOLO un arreglo JSON, sin texto extra. Pasos posibles: {"what":"launch","text":"nombre de la app"}, {"what":"search","text":"qué buscar"}, {"what":"tap","text":"texto del botón"}, {"what":"type","text":"qué escribir"}, {"what":"back"}, {"what":"home"}, {"what":"down"}, {"what":"up"}, {"what":"notifications"}, {"what":"screenshot"}. Máximo 6 pasos. Nada de bancos, pagos, compras ni contraseñas: si la orden pide eso, responde [].`;
+async function planSteps(text) {
+  if (cfg.provider === 'local') return null;
+  const raw = await brainCall(cfg.provider, [
+    { role: 'system', content: STEP_PLAN_PROMPT },
+    { role: 'user', content: text },
+  ]);
+  const m = /\[[\s\S]*\]/.exec(raw || '');
+  return m ? JSON.parse(m[0]) : null;
+}
+
+// (1.13.0) one control step, answered by ControlService itself: 'control:done' when it did it,
+// 'control:miss' (with its why) when it wouldn't — bank apps, password fields, a locked
+// screen: the same refusals as always, and the step run stops there
+const stepWaiters = [];
+on('control:done', () => stepWaiters.splice(0).forEach((w) => w({ ok: true })));
+on('control:miss', (p) => stepWaiters.splice(0).forEach((w) => w({ ok: false, why: p?.why || 'failed' })));
+async function doControlStep(step) {
+  if (!await call('control:state').catch(() => false)) return { ok: false, why: 'off' };
+  const done = new Promise((r) => {
+    stepWaiters.push(r);
+    setTimeout(() => r({ ok: false, why: 'timeout' }), 6000);
+  });
+  send('control:do', { what: step.what, text: step.text || '' });
+  return done;
+}
+
+// (1.13.0) her deciding alone (autonomy.js): what she sees, one JSON decision, nothing else.
+// With a brain that sees, the picture goes (sayAboutSnap, her look); without it, her brain
+// decides from words alone. A broken answer means she does nothing — the safe answer.
+const ALONE_PROMPT = `Estás actuando sola en el celular de tu persona porque te dio permiso con el botón «Ella actúa sola». Esto es lo que se ve en su pantalla ahora. Decide UNA sola cosa, útil o divertida y breve: abrir una app, tocar algo, bajar o subir, escribir algo corto, o no hacer nada. Responde SOLO un JSON así: {"act":"launch|tap|down|up|type|none","text":"la app, el texto del botón o lo que escribirías","say":"una frase tuya, corta, o vacío"}. Reglas que no se rompen: nada en apps de banco o pagos, nada de compras, nada en campos de contraseña, nada de mandar mensajes en su nombre. Ante la duda, act: "none".`;
+async function aloneDecide(imageId) {
+  let raw = '';
+  if (imageId) {
+    const res = await sayAboutSnap({ id: imageId, persona: window.dev?.chat?.persona?.() || '', prompt: ALONE_PROMPT, history: [] }).catch(() => null);
+    if (res?.ok && res.text) raw = res.text;
+  }
+  if (!raw) {
+    raw = await brainCall(cfg.provider, [
+      { role: 'system', content: window.dev?.chat?.persona?.() || '' },
+      { role: 'user', content: `${ALONE_PROMPT}\n\n(No tienes la foto de la pantalla: decide solo con lo que sabes de tu persona. Si no hay nada claro, act: "none".)` },
+    ]).catch(() => '');
+  }
+  const m = /\{[\s\S]*\}/.exec(raw || '');
+  if (!m) return null;
+  try {
+    const d = JSON.parse(m[0]);
+    return { act: String(d.act || 'none'), text: String(d.text || ''), say: String(d.say || '') };
+  } catch { return null; }
+}
+
+async function chatOnce(c, messages, sendDelta, signal, streamed) {
+  let model = pickModel(c);
+  const tried = new Set();
+  // her model is resting (it ran out a moment ago): another of the service's first, if one isn't
+  if (isTired(model) && c.provider !== 'ollama' && c.provider !== 'claude') {
+    const fresh = rankModels(chatModels || []).find((m) => !isTired(m));
+    if (fresh) model = fresh;
+  }
+  let busy = 0;
+  let waited = 0;
+  const watched = c.provider !== 'ollama' && c.provider !== 'claude';
+  for (;;) {
+    const inner = new AbortController();
+    const stop = () => inner.abort();
+    signal.addEventListener('abort', stop, { once: true });
+    let stuck = false;
+    const timer = watched && setTimeout(() => {
+      if (streamed()) return;
+      stuck = true;
+      inner.abort();
+    }, c.provider === 'pollinations' ? FIRST_WORD_FREE_MS : FIRST_WORD_MS);
+    let used = '';
+    try {
+      const conf = await llmConfig(c);
+      used = conf.apiKeys?.[c.provider] || '';
+      const text = await inLane(c.provider, () => llm.chat(c.provider, conf, { model, messages }, sendDelta, inner.signal));
+      // (1.10.0) "se queda en blanco, sin dar ninguna respuesta": some models answer nothing at all (all
+      // of it spent thinking, or cut off): asked again, then another model, as if it were busy
+      if (!String(text ?? '').trim() && !streamed()) throw Object.assign(new Error('empty answer'), { code: 'busy' });
+      // (one that's only resting stays her model: it's back later)
+      if (model !== pickModel(c) && !isTired(pickModel(c))) updateConfig({ chatModel: model });
+      return text;
+    } catch (err) {
+      // a model the service retired, still on its list (NVIDIA says 410 Gone): the next one
+      // (1.11.8) your next key of this service, when this one ran out (or was turned down): same model, at once
+      if (!stuck && !signal.aborted && !streamed() && await swapKey(c, used, err)) continue;
+      if (err.status === 410 || /end of life|no longer available|terms acceptance|accept the terms|not have access to model|model_terms_required/i.test(err.message || '')) err.code = 'gone';
+      // (1.12.0) closed for good: never asked again here, and the one it names instead goes next
+      const after1 = err.code === 'gone' && (err.status === 410 || /end of life|no longer available/i.test(err.message || ''));
+      if (after1) {
+        retire(model);
+        const instead = successor(err, chatModels);
+        if (instead && !tried.has(instead) && !signal.aborted && !streamed()) {
+          tried.add(model);
+          model = instead;
+          continue;
+        }
+      }
+      // the free AI answers one message every 45 s per phone (and sometimes it's full): it says how
+      // long to wait, so she waits and asks again instead of giving up
+      // (402 FREE_LIMIT is that too; and when it doesn't say how long, a little longer each time:
+      // 1.9.0, she waits for her turn instead of saying she's swamped)
+      if (c.provider === 'pollinations' && err.status === 402) err.code = 'busy';
+      const free = c.provider === 'pollinations' && err.code === 'busy' ? [8, 15, 25][waited] || 0 : 0;
+      const after = Number(/retry after (\d+)\s*s/i.exec(err.message || '')?.[1]) || free;
+      if (!stuck && !signal.aborted && c.provider === 'pollinations' && after > 0 && after <= 60 && waited++ < 3) {
+        await new Promise((r) => {
+          const t = setTimeout(r, (after + 1) * 1000);
+          signal.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true });
+        });
+        if (!signal.aborted) continue;
+      }
+      if (stuck && !signal.aborted) err = Object.assign(new Error('timeout'), { code: 'busy' });
+      if (stuck && !signal.aborted) busy = 1; // straight to another model
+      if (signal.aborted || streamed() || !['busy', 'gone', 'signin'].includes(err.code)) throw err;
+      // (a spent quota isn't back in 1.5 s: the next model at once)
+      if (err.code === 'busy' && !/quota|exhausted|billing/i.test(err.message || '') && busy++ === 0) {
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+      if (err.code === 'busy' && !stuck) rest(model, err);
+      tried.add(model);
+      const ranked = c.provider === 'ollama' ? chatModels || [] : rankModels(chatModels || []);
+      const fresh = (m) => !tried.has(m) && !isTired(m);
+      const next = ranked.find((m) => fresh(m) && !ollama.isCloud(m)) || ranked.find(fresh);
+      if (!next || tried.size >= 2) throw err; // (1.12.0: 3 → 2, then another AI)
+      model = next;
+      busy = 0;
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', stop);
+    }
+  }
+}
+
+async function pullModel(name, onProgress, signal) {
+  const res = await (await import('./fetch.js')).nativeFetch(`${ollama.base()}/api/pull`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: name, stream: true }), signal,
+  });
+  if (!res.ok) throw new Error(`Ollama answered ${res.status}`);
+  const pieces = new Map();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let nl;
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line) continue;
+      const msg = JSON.parse(line);
+      if (msg.error) throw new Error(msg.error);
+      if (msg.digest && msg.total) pieces.set(msg.digest, { completed: msg.completed || 0, total: msg.total });
+      let completed = 0, total = 0;
+      for (const p of pieces.values()) {
+        completed += p.completed;
+        total += p.total;
+      }
+      onProgress?.({ completed, total, status: msg.status });
+      if (msg.status === 'success') return;
+    }
+  }
+}
+
+async function fetchModel(name, onProgress, signal) {
+  await pullModel(name, onProgress, signal);
+  updateConfig({ provider: 'ollama' });
+  await refreshModels();
+  const model = chatModels?.find((m) => m === name || m.startsWith(`${name}:`));
+  if (model) updateConfig({ chatModel: model });
+  return model;
+}
+
+async function pickProvider(provider) {
+  updateConfig({ provider });
+  await refreshModels();
+  if (chatErrorCode) sendCommand('setupKey');
+}
+
+// ---------- she looks at your screen ----------
+
+const snaps = new Map();
+
+// What went wrong, said the way a person would (the raw error goes to the app's Registro): no
+// "signal is aborted" or "messages[1].content must be a string" in her panel
+const FRIENDLY = {
+  es: [
+    [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'a tu cuenta de esa IA le falta saldo para esto; usa un modelo gratis (los que dicen «free») o recarga'],
+    [/must be a string|image_url|vision|multimodal|modalit/i, 'esa IA no puede ver imágenes'],
+    [/^not allowed/i, 'no me diste permiso de ver tu pantalla'],
+    [/screen off/i, 'la pantalla está apagada'],
+    [/no picture|picture is gone/i, 'no me llegó la imagen, intenta otra vez'],
+    [/40[13]|invalid.*key|api key|unauthori[sz]ed|incorrect/i, 'la clave de la IA no funciona; revísala en Ajustes'],
+    [/quota|per ?day|exhausted/i, 'la IA llegó a su límite gratis por ahora; prueba más tarde o elige otro modelo en Ajustes'],
+    [/402|429|rate|limit|quota|too many/i, 'la IA está saturada, espera un momentito'],
+    [/50\d|unavailable|overloaded|high demand|bad gateway/i, 'el servicio de la IA está caído, intenta en un rato'],
+    [/timeout|timed out|tardó/i, 'la IA tardó demasiado en contestar'],
+    [/abort|signal|cancel/i, 'se cortó la conexión, intenta otra vez'],
+    [/network|fetch|resolve|offline|connect|socket|host/i, 'no hay internet o el servicio no responde'],
+  ],
+  en: [
+    [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'your account with that AI is short on credit for this; pick a free model (the ones marked “free”) or top it up'],
+    [/must be a string|image_url|vision|multimodal|modalit/i, 'that AI can’t see pictures'],
+    [/^not allowed/i, 'you didn’t let me see your screen'],
+    [/screen off/i, 'the screen is off'],
+    [/no picture|picture is gone/i, 'the picture didn’t reach me, try again'],
+    [/40[13]|invalid.*key|api key|unauthori[sz]ed|incorrect/i, 'the AI key doesn’t work; check it in Settings'],
+    [/quota|per ?day|exhausted/i, 'the AI hit its free limit for now; try later or pick another model in Settings'],
+    [/402|429|rate|limit|quota|too many/i, 'the AI is busy, give it a moment'],
+    [/50\d|unavailable|overloaded|high demand|bad gateway/i, 'the AI service is down, try again later'],
+    [/timeout|timed out/i, 'the AI took too long to answer'],
+    [/abort|signal|cancel/i, 'the connection dropped, try again'],
+    [/network|fetch|resolve|offline|connect|socket|host/i, 'no internet, or the service isn’t answering'],
+  ],
+  fr: [
+    [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'ton compte chez cette IA manque de crédit pour ça ; prends un modèle gratuit (marqué « free ») ou recharge'],
+    [/must be a string|image_url|vision|multimodal|modalit/i, 'cette IA ne voit pas les images'],
+    [/^not allowed/i, 'tu ne m’as pas laissée voir ton écran'],
+    [/screen off/i, 'l’écran est éteint'],
+    [/no picture|picture is gone/i, 'l’image ne m’est pas arrivée, réessaie'],
+    [/40[13]|invalid.*key|api key|unauthori[sz]ed|incorrect/i, 'la clé de l’IA ne marche pas ; vérifie-la dans Réglages'],
+    [/quota|per ?day|exhausted/i, 'l’IA a atteint sa limite gratuite pour l’instant ; réessaie plus tard ou choisis un autre modèle dans Réglages'],
+    [/402|429|rate|limit|quota|too many/i, 'l’IA est saturée, attends un petit moment'],
+    [/50\d|unavailable|overloaded|high demand|bad gateway/i, 'le service de l’IA est en panne, réessaie plus tard'],
+    [/timeout|timed out/i, 'l’IA a mis trop de temps à répondre'],
+    [/abort|signal|cancel/i, 'la connexion a coupé, réessaie'],
+    [/network|fetch|resolve|offline|connect|socket|host/i, 'pas d’internet, ou le service ne répond pas'],
+  ],
+  pt: [
+    [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'sua conta nessa IA está sem saldo pra isso; usa um modelo grátis (os que dizem “free”) ou recarrega'],
+    [/must be a string|image_url|vision|multimodal|modalit/i, 'essa IA não enxerga imagens'],
+    [/^not allowed/i, 'você não me deixou ver sua tela'],
+    [/screen off/i, 'a tela está desligada'],
+    [/no picture|picture is gone/i, 'a imagem não chegou, tenta de novo'],
+    [/40[13]|invalid.*key|api key|unauthori[sz]ed|incorrect/i, 'a chave da IA não funciona; confira em Ajustes'],
+    [/quota|per ?day|exhausted/i, 'a IA chegou ao limite grátis por agora; tente mais tarde ou escolha outro modelo em Ajustes'],
+    [/402|429|rate|limit|quota|too many/i, 'a IA está lotada, espera um pouquinho'],
+    [/50\d|unavailable|overloaded|high demand|bad gateway/i, 'o serviço da IA caiu, tenta daqui a pouco'],
+    [/timeout|timed out/i, 'a IA demorou demais para responder'],
+    [/abort|signal|cancel/i, 'a conexão caiu, tenta de novo'],
+    [/network|fetch|resolve|offline|connect|socket|host/i, 'sem internet, ou o serviço não responde'],
+  ],
+  ru: [
+    [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'на твоём аккаунте этого ИИ не хватает средств; выбери бесплатную модель (с пометкой «free») или пополни счёт'],
+    [/must be a string|image_url|vision|multimodal|modalit/i, 'этот ИИ не видит картинки'],
+    [/^not allowed/i, 'ты не разрешил мне видеть экран'],
+    [/screen off/i, 'экран выключен'],
+    [/no picture|picture is gone/i, 'картинка до меня не дошла, попробуй ещё раз'],
+    [/40[13]|invalid.*key|api key|unauthori[sz]ed|incorrect/i, 'ключ ИИ не работает; проверь его в Настройках'],
+    [/quota|per ?day|exhausted/i, 'ИИ пока исчерпал бесплатный лимит; попробуй позже или выбери другую модель в настройках'],
+    [/402|429|rate|limit|quota|too many/i, 'ИИ перегружен, подожди немного'],
+    [/50\d|unavailable|overloaded|high demand|bad gateway/i, 'сервис ИИ не работает, попробуй позже'],
+    [/timeout|timed out/i, 'ИИ слишком долго отвечал'],
+    [/abort|signal|cancel/i, 'соединение оборвалось, попробуй ещё раз'],
+    [/network|fetch|resolve|offline|connect|socket|host/i, 'нет интернета, или сервис не отвечает'],
+  ],
+  vi: [
+    [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'tài khoản của bạn với AI đó không đủ tín dụng; chọn mô hình miễn phí (những cái ghi “free”) hoặc nạp thêm'],
+    [/must be a string|image_url|vision|multimodal|modalit/i, 'AI đó không nhìn được ảnh'],
+    [/^not allowed/i, 'bạn chưa cho mình xem màn hình'],
+    [/screen off/i, 'màn hình đang tắt'],
+    [/no picture|picture is gone/i, 'ảnh không đến được chỗ mình, thử lại nhé'],
+    [/40[13]|invalid.*key|api key|unauthori[sz]ed|incorrect/i, 'khóa AI không hoạt động; kiểm tra trong Cài đặt'],
+    [/quota|per ?day|exhausted/i, 'AI đã hết giới hạn miễn phí; thử lại sau hoặc chọn mô hình khác trong Cài đặt'],
+    [/402|429|rate|limit|quota|too many/i, 'AI đang bận, chờ chút nhé'],
+    [/50\d|unavailable|overloaded|high demand|bad gateway/i, 'dịch vụ AI đang gặp sự cố, thử lại sau'],
+    [/timeout|timed out/i, 'AI trả lời lâu quá'],
+    [/abort|signal|cancel/i, 'kết nối bị ngắt, thử lại nhé'],
+    [/network|fetch|resolve|offline|connect|socket|host/i, 'không có internet, hoặc dịch vụ không phản hồi'],
+  ],
+  ja: [
+    [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'そのAIのアカウントのクレジットが足りないみたい。無料モデル（“free”と書いてあるもの）を選ぶかチャージしてね'],
+    [/must be a string|image_url|vision|multimodal|modalit/i, 'そのAIは画像を見られないの'],
+    [/^not allowed/i, '画面を見る許可をもらってないよ'],
+    [/screen off/i, '画面がオフだよ'],
+    [/no picture|picture is gone/i, '画像が届かなかった、もう一度試して'],
+    [/40[13]|invalid.*key|api key|unauthori[sz]ed|incorrect/i, 'AIのキーが使えないよ。設定で確認して'],
+    [/quota|per ?day|exhausted/i, 'AIの無料枠を使い切ったみたい。後で試すか、設定で別のモデルを選んで'],
+    [/402|429|rate|limit|quota|too many/i, 'AIが混んでるの、ちょっと待って'],
+    [/50\d|unavailable|overloaded|high demand|bad gateway/i, 'AIサービスが落ちてるみたい、後でもう一度'],
+    [/timeout|timed out/i, 'AIの返事に時間がかかりすぎた'],
+    [/abort|signal|cancel/i, '接続が切れちゃった、もう一度試して'],
+    [/network|fetch|resolve|offline|connect|socket|host/i, 'インターネットがないか、サービスが応答してないよ'],
+  ],
+  de: [
+    [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'dein Konto bei dieser KI hat nicht genug Guthaben; wähl ein kostenloses Modell (die mit „free“) oder lade auf'],
+    [/must be a string|image_url|vision|multimodal|modalit/i, 'diese KI kann keine Bilder sehen'],
+    [/^not allowed/i, 'du hast mich deinen Bildschirm nicht sehen lassen'],
+    [/screen off/i, 'der Bildschirm ist aus'],
+    [/no picture|picture is gone/i, 'das Bild ist nicht angekommen, versuch’s nochmal'],
+    [/40[13]|invalid.*key|api key|unauthori[sz]ed|incorrect/i, 'der KI-Schlüssel funktioniert nicht; prüf ihn in den Einstellungen'],
+    [/quota|per ?day|exhausted/i, 'die KI hat ihr Gratis-Limit erreicht; versuch es später oder wähl ein anderes Modell in den Einstellungen'],
+    [/402|429|rate|limit|quota|too many/i, 'die KI ist beschäftigt, gib ihr einen Moment'],
+    [/50\d|unavailable|overloaded|high demand|bad gateway/i, 'der KI-Dienst ist ausgefallen, versuch es später'],
+    [/timeout|timed out/i, 'die KI hat zu lange gebraucht'],
+    [/abort|signal|cancel/i, 'die Verbindung ist abgebrochen, versuch’s nochmal'],
+    [/network|fetch|resolve|offline|connect|socket|host/i, 'kein Internet, oder der Dienst antwortet nicht'],
+  ],
+  it: [
+    [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'il tuo account con quell’IA non ha abbastanza credito; scegli un modello gratuito (quelli con “free”) o ricaricalo'],
+    [/must be a string|image_url|vision|multimodal|modalit/i, 'quell’IA non vede le immagini'],
+    [/^not allowed/i, 'non mi hai fatto vedere lo schermo'],
+    [/screen off/i, 'lo schermo è spento'],
+    [/no picture|picture is gone/i, 'l’immagine non mi è arrivata, riprova'],
+    [/40[13]|invalid.*key|api key|unauthori[sz]ed|incorrect/i, 'la chiave dell’IA non funziona; controllala nelle Impostazioni'],
+    [/quota|per ?day|exhausted/i, 'l’IA ha raggiunto il limite gratuito; riprova più tardi o scegli un altro modello nelle Impostazioni'],
+    [/402|429|rate|limit|quota|too many/i, 'l’IA è occupata, dalle un momento'],
+    [/50\d|unavailable|overloaded|high demand|bad gateway/i, 'il servizio IA non funziona, riprova più tardi'],
+    [/timeout|timed out/i, 'l’IA ci ha messo troppo a rispondere'],
+    [/abort|signal|cancel/i, 'la connessione è caduta, riprova'],
+    [/network|fetch|resolve|offline|connect|socket|host/i, 'niente internet, o il servizio non risponde'],
+  ],
+};
+const SOMETHING = { es: 'algo falló, intenta otra vez', en: 'something went wrong, try again', fr: 'quelque chose a raté, réessaie', pt: 'algo deu errado, tenta de novo', ru: 'что-то пошло не так, попробуй ещё раз', vi: 'có gì đó bị lỗi, thử lại nhé', ja: '何かがうまくいかなかった、もう一度試して', de: 'etwas ist schiefgelaufen, versuch’s nochmal', it: 'qualcosa è andato storto, riprova' };
+const FREE_AI = { es: 'La IA gratis', en: 'The free AI', fr: 'L’IA gratuite', pt: 'A IA grátis', ru: 'Бесплатный ИИ', vi: 'AI miễn phí', ja: '無料AI', de: 'Die kostenlose KI', it: 'L’IA gratuita' };
+function friendly(message) {
+  const raw = String(message || '');
+  send('log', { level: 'W', text: `AI: ${raw.slice(0, 300)}` });
+  const lang = FRIENDLY[resolveLang(cfg.lang)] ? resolveLang(cfg.lang) : 'en';
+  const hit = FRIENDLY[lang].find(([re]) => re.test(raw));
+  return hit ? hit[1] : SOMETHING[lang];
+}
+
+// her AI can't look at pictures: why, before Android asks you to share your screen for nothing
+async function cantSee() {
+  if (!chatModels?.length) await refreshModels();
+  const model = pickModel(cfg);
+  if (!model) return { ok: false, code: 'noai' };
+  if (cfg.provider === 'claude') return { ok: false, code: 'novision', model: 'Claude Code' };
+  if (cfg.provider === 'ollama' && !(await ollama.canSee(model))) return { ok: false, code: 'novision', model };
+  if (cfg.provider === 'pollinations' && !(await freeSees(model))) return { ok: false, code: 'novision', model: FREE_AI[brainLang()] || FREE_AI.en };
+  // (1.10.0) "Groq dice que puede ver mi pantalla, pero me pide otra IA": none of this service's models
+  // sees now, but another service you have a key for does (lookElsewhere): she looks with that one
+  const elsewhereKey = LOOK_SERVICES.some((id) => id !== cfg.provider && cfg.apiKeys?.[id]);
+  if (!['ollama', 'pollinations', 'custom'].includes(cfg.provider) && !lookModel() && !elsewhereKey) return { ok: false, code: 'novision', model };
+  return null;
+}
+
+// The model she looks with: her chat's own if it sees pictures, else one of the same service that
+// does (Groq's Llama 4, any Gemini, GPT-4o…), so a key for a text-only chat model still lets her
+// look. Null when the service has none (DeepSeek).
+const SEES = /vision|[-_ ]vl\b|llama-4|scout|maverick|gpt-4o|gpt-4\.1|gpt-5|chatgpt-4o|\bo[34]\b|gemini|pixtral|claude|llava|gemma-?3|qwen.*vl|mistral-(small|medium)|grok-.*vision/i;
+const BLIND = /embed|tts|audio|whisper|guard|moderation|image-gen|dall|imagen|-tts|transcri|search|nano-banana/i;
+function lookModel() {
+  return lookModels()[0] || null;
+}
+// Every model she could look with, the best first: her chat's own if it sees, then the service's
+// others that do. Not the ones that turned out blind, nor (while others are left) resting ones.
+const blindModels = new Set();
+function lookModels() {
+  const model = pickModel(cfg);
+  if (['ollama', 'pollinations', 'custom'].includes(cfg.provider)) return model ? [model] : [];
+  if (cfg.provider === 'deepseek') return [];
+  const ok = (m) => SEES.test(m) && !BLIND.test(m) && !blindModels.has(m) && !(cfg.blindModels || []).includes(m) && !retired.has(m); // (1.12.0: nor a closed one)
+  const out = [];
+  if (model && ok(model)) out.push(model);
+  if (cfg.provider === 'nvidia') {
+    for (const re of NV_SEES) {
+      const m = (chatModels || []).find((n) => re.test(n) && ok(n));
+      if (m) out.push(m);
+    }
+  }
+  // the newest-looking, non-preview one first (the lists come in no useful order)
+  const rank = (m) => (/preview|exp/i.test(m) ? 2 : 0) + (/mini|lite|small|scout|flash/i.test(m) ? 0 : 1);
+  out.push(...(chatModels || []).filter(ok).sort((a, b) => rank(a) - rank(b)));
+  const all = [...new Set(out)];
+  const fresh = all.filter((m) => !isTired(m));
+  return fresh.length ? [...fresh, ...all.filter(isTired)] : all;
+}
+// a model's answer said it can't take pictures: never asked to look again (kept in her config)
+function markBlind(model) {
+  if (!model || ['ollama', 'pollinations', 'custom'].includes(cfg.provider)) return;
+  blindModels.add(model);
+  updateConfig({ blindModels: [...new Set([...(cfg.blindModels || []), model])].slice(-40) });
+}
+// the services that have models that see (her look picks one of them): 👁 in her menu
+const SERVICE_SEES = new Set(['gemini', 'openai', 'groq', 'openrouter', 'mistral', 'nvidia', 'ollama']);
+// can this model (of her service) see pictures? for her menu and the app's list: true, false or null (can't tell)
+function modelSees(model, provider = cfg.provider) {
+  if (!model) return null;
+  if (provider === 'claude' || provider === 'deepseek') return false;
+  if (['ollama', 'pollinations', 'custom'].includes(provider)) return null;
+  if ((cfg.blindModels || []).includes(model) || blindModels.has(model)) return false;
+  return SEES.test(model) && !BLIND.test(model);
+}
+const brainLang = () => window.dev?.brain?.lang || 'en';
+
+// the free AI's models say whether they take pictures (its list has vision / input_modalities);
+// one that can't would answer about a picture it never saw
+let freeVision = null;
+async function freeSees(model) {
+  if (!freeVision || Date.now() - freeVision.at > KEEP_MODELS) {
+    const { nativeFetch } = await import('./fetch.js'); // the page itself can't reach the internet
+    const list = await nativeFetch('https://text.pollinations.ai/models', { signal: AbortSignal.timeout(8000) })
+      .then((r) => r.json()).catch(() => null);
+    if (!Array.isArray(list)) return true; // can't tell: let it try (a refusal says so)
+    freeVision = { at: Date.now(), sees: new Set(list.filter((m) => m?.vision === true || (m?.input_modalities || []).includes('image')).map((m) => m.name)) };
+  }
+  return freeVision.sees.has(model);
+}
+// A JPEG (base64) made smaller until its text is at most `max` long: narrower and a bit rougher.
+async function shrink(b64, max) {
+  if (!b64 || b64.length <= max) return b64;
+  try {
+    const img = new Image();
+    img.src = `data:image/jpeg;base64,${b64}`;
+    await img.decode();
+    let out = b64;
+    for (let scale = 0.8, q = 0.6; out.length > max && scale > 0.2; scale *= 0.8) {
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * scale);
+      c.height = Math.round(img.naturalHeight * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      out = c.toDataURL('image/jpeg', q).split(',')[1];
+    }
+    return out;
+  } catch {
+    return b64;
+  }
+}
+// Her own drawing, her panel and her words painted out of the screenshot (each spot filled with
+// the color around it): she never comments on herself, her chat or her own lines as if they were
+// something on your screen.
+async function hideSelf(b64, rects) {
+  if (!b64 || !rects?.length) return b64;
+  try {
+    const img = new Image();
+    img.src = `data:image/jpeg;base64,${b64}`;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0);
+    const k = c.width / innerWidth; // the overlay covers the whole screen: same scale both ways
+    for (const [l, t, r, b] of rects) {
+      const x = Math.max(0, Math.floor(l * k)), y = Math.max(0, Math.floor(t * k));
+      const w = Math.min(c.width, Math.ceil(r * k)) - x, h = Math.min(c.height, Math.ceil(b * k)) - y;
+      if (w <= 0 || h <= 0) continue;
+      // the average color of a ring just around it
+      const ring = Math.max(4, Math.round(8 * k));
+      let R = 0, G = 0, B = 0, n = 0;
+      const add = (sx, sy, sw, sh) => {
+        sx = Math.max(0, sx); sy = Math.max(0, sy);
+        sw = Math.min(c.width - sx, sw); sh = Math.min(c.height - sy, sh);
+        if (sw <= 0 || sh <= 0) return;
+        const d = g.getImageData(sx, sy, sw, sh).data;
+        for (let i = 0; i < d.length; i += 16) { R += d[i]; G += d[i + 1]; B += d[i + 2]; n++; }
+      };
+      add(x - ring, y - ring, w + 2 * ring, ring);
+      add(x - ring, y + h, w + 2 * ring, ring);
+      add(x - ring, y, ring, h);
+      add(x + w, y, ring, h);
+      g.fillStyle = n ? `rgb(${Math.round(R / n)},${Math.round(G / n)},${Math.round(B / n)})` : '#808080';
+      g.fillRect(x, y, w, h);
+    }
+    return c.toDataURL('image/jpeg', 0.8).split(',')[1];
+  } catch {
+    return b64;
+  }
+}
+
+// opening something on your phone for you: a moment of her netrunning (poses.js), when it's drawn
+function hack() {
+  window.dev?.poses?.cue('hack', { times: 2 });
+  return true;
+}
+
+// (1.12.0, community: "que Capri pueda escuchar canciones… reconocer sus títulos, artistas") a sound (a song shared
+// with her, or a few seconds she heard with "Capri, ¿qué canción es esta?"): Gemini is the AI that hears, with
+// your Gemini key (hers, or a second one you gave her). Without one she says so.
+async function hearSound({ audio, format = 'wav', persona, prompt, history = [] }) {
+  const conf = await llmConfig();
+  if (!conf.apiKeys?.gemini) return { ok: false, code: 'noear' };
+  let list = cfg.provider === 'gemini' ? chatModels : null;
+  if (!list?.length) list = await llm.models('gemini', conf).catch(() => null);
+  const models = rankModels(list || [], 'gemini').filter((m) => /flash|pro/i.test(m) && !isTired(m)).slice(0, 3);
+  if (!models.length) return { ok: false, code: 'noear' };
+  const before = (Array.isArray(history) ? history : []).filter((m) => typeof m?.content === 'string' && ['user', 'assistant'].includes(m.role)).slice(-8);
+  const messages = [{ role: 'system', content: persona }, ...before,
+    { role: 'user', content: [{ type: 'text', text: prompt }, { type: 'input_audio', input_audio: { data: String(audio), format } }] }];
+  let last = null;
+  for (const model of models) {
+    try {
+      const text = await llm.chat('gemini', conf, { model, messages }, noop, AbortSignal.timeout(120000));
+      return { ok: true, text, model };
+    } catch (err) {
+      last = { ok: false, error: friendly(err.message), code: err.code || null, model };
+      if (err.code === 'busy') rest(model, err);
+      if (err.status === 410 || /no longer available/i.test(err.message || '')) retire(model);
+    }
+  }
+  return last || { ok: false, code: 'noear' };
+}
+
+async function sayAboutSnap({ id, persona, prompt, history = [] }) {
+  const snap = snaps.get(id);
+  snaps.delete(id);
+  const blind = await cantSee();
+  if (!snap?.image) return { ok: false, error: 'the picture is gone' };
+  if (blind && blind.code !== 'novision') return blind;
+  const image = await hideSelf(snap.image, snap.self);
+  window.dev?.poses?.cue('scan', { hold: 9000, chat: true }); // (the picture is taken: she can stand in front now)
+  // she isn't in the picture anymore: nothing to tell her about herself in it
+  prompt = String(prompt).replace(/If you see a small figure[^.]*\.\s*/i, '');
+  // on a phone it's often a video, a reel or a post: she reacts to it like a friend watching with you
+  if (!snap.shared) prompt = `${prompt}\n(On a phone: if it's a video, a reel or a post, TikTok, Instagram, YouTube or the like, react to what happens in it or what it says, like a friend watching it with them. Never describe the phone's own buttons or bars, nor flat patches of color.)`;
+  const before = (Array.isArray(history) ? history : []).filter((m) => typeof m?.content === 'string' && ['user', 'assistant'].includes(m.role)).slice(-12);
+  const models = blind ? [] : lookModels();
+  // (1.10.0) her own service can't look, or can't right now: another of yours that sees does
+  // ("solo Gemini funciona para que mire la pantalla")
+  const elsewhere = async (why) => {
+    const other = await lookElsewhere(persona, before, prompt, image);
+    if (other) return other;
+    if (why?.ok === false) send('log', { level: 'W', text: `look: ${why.code || ''} ${String(why.error || '').slice(0, 140)} (${cfg.provider} ${why.model || ''})` });
+    return why;
+  };
+  if (!models.length) return elsewhere(blind || { ok: false, code: 'novision', model: pickModel(cfg) });
+  const resting = aiResting(models);
+  if (resting) return elsewhere({ ok: false, code: 'busy', error: friendly('429 quota'), until: resting, model: models[0] });
+  let last = null;
+  for (const model of models.slice(0, 3)) {
+    // NVIDIA takes a picture inside the message only if it's small: a smaller copy goes
+    const pic = cfg.provider === 'nvidia' ? await shrink(image, 170000) : image;
+    const user = cfg.provider === 'ollama'
+      ? { role: 'user', content: prompt, images: [pic] }
+      : { role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${pic}` } }] };
+    const messages = [{ role: 'system', content: persona }, ...before, user];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const text = await llm.chat(cfg.provider, await llmConfig(), { model, messages }, noop, AbortSignal.timeout(120000));
+        return { ok: true, text, model };
+      } catch (err) {
+        const novision = /image|vision|multimodal|modalit|image_url|content.*(part|type)|must be a string|content.*string/i.test(err.message);
+        last = { ok: false, error: friendly(err.message), code: novision ? 'novision' : err.code || null, model };
+        if (novision) {
+          markBlind(model); // and the next one that sees
+          break;
+        }
+        if (err.code === 'busy' && attempt === 0 && !/quota|per ?day|exhausted/i.test(err.message || '')) {
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        if (err.code === 'busy') rest(model, err);
+        if (err.status === 410 || /end of life|no longer available/i.test(err.message || '')) retire(model); // (1.12.0)
+        if (!['busy', 'gone'].includes(err.code)) return elsewhere(last);
+        break;
+      }
+    }
+  }
+  if (last?.code === 'busy') last.until = aiResting(models) || Date.now() + 90000;
+  return elsewhere(last);
+}
+
+// Another service of yours (a key you gave her) whose models see: one of them looks instead.
+const LOOK_SERVICES = ['gemini', 'openrouter', 'groq', 'openai', 'mistral', 'nvidia'];
+async function lookElsewhere(persona, before, prompt, image) {
+  const conf = await llmConfig();
+  const others = LOOK_SERVICES.filter((id) => id !== cfg.provider && conf.apiKeys?.[id] && llm.PROVIDERS[id]?.url);
+  for (const id of others) {
+    let models = backupModels.get(id);
+    if (!models || Date.now() - models.at > KEEP_MODELS) {
+      const list = await llm.models(id, conf).catch(() => null);
+      if (!list?.length) continue;
+      models = { at: Date.now(), list: id === 'nvidia' ? nvidiaModels(list) : list };
+      backupModels.set(id, models);
+    }
+    const ok = (m) => SEES.test(m) && !BLIND.test(m) && !blindModels.has(m) && !isTired(m) && !(id === 'openrouter' && !/:free$/.test(m) && /claude|gpt-[45]|o[34]\b/.test(m));
+    const nv = id === 'nvidia' ? NV_SEES.map((re) => models.list.find((n) => re.test(n))).filter(Boolean) : [];
+    const model = [...nv, ...models.list].find(ok);
+    if (!model) continue;
+    const pic = id === 'nvidia' ? await shrink(image, 170000) : image;
+    const user = { role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${pic}` } }] };
+    try {
+      const text = await llm.chat(id, conf, { model, messages: [{ role: 'system', content: persona }, ...before, user] }, noop, AbortSignal.timeout(90000));
+      send('log', { level: 'W', text: `look: ${cfg.provider} couldn't, ${id} (${model}) looked instead` });
+      return { ok: true, text, model };
+    } catch (e) {
+      if (e.code === 'busy') rest(model, e);
+      send('log', { level: 'W', text: `look backup ${id} (${model}): ${String(e.message || e).slice(0, 120)}` });
+    }
+  }
+  return null;
+}
+
+// NVIDIA lists its models to anyone, key or not, so that doesn't say whether a key works: a
+// one-word question does. Why it doesn't, or null (also when it can't tell: the key stays).
+async function nvidiaKeyBad(key) {
+  if (!/^nvapi-/.test(key)) return 'invalid API key (NVIDIA keys start with nvapi-)';
+  const { nativeFetch } = await import('./fetch.js');
+  const url = llm.PROVIDERS.nvidia.url;
+  try {
+    const body = await nativeFetch(`${url}/models`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json());
+    const names = nvidiaModels((body?.data || []).map((m) => m.id).filter(Boolean));
+    const model = NV_QUICK.map((re) => names.find((n) => re.test(n))).find(Boolean);
+    if (!model) return null;
+    const res = await nativeFetch(`${url}/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
+      signal: AbortSignal.timeout(20000),
+    });
+    return res.status === 401 || res.status === 403 ? `invalid API key (${res.status})` : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------- the demo ----------
+
+let demoTimer = null;
+function playDemo() {
+  clearTimeout(demoTimer);
+  const steps = demoSteps(resolveLang(cfg.lang));
+  let i = 0;
+  const next = () => {
+    if (i >= steps.length) return;
+    const [delay, evt] = steps[i++];
+    demoTimer = setTimeout(() => {
+      emit('claude:event', evt);
+      next();
+    }, delay);
+  };
+  next();
+}
+
+function toggleVisible(force) {
+  const visible = typeof force === 'boolean' ? force : !cfg.visible;
+  updateConfig({ visible });
+  sendCommand('stow', { on: !visible });
+}
+
+// (1.10.0, community: "un botón para que Capri aparezca de la nada en cualquier momento, viendo
+// videos o jugando") her tile, her notification or Android's accessibility button: out of nowhere,
+// with a glitch and a line; pressed again while she's out, she goes
+const SUMMON_LINES = {
+  es: ['¿Me llamaste?', 'Aquí estoy.', 'Salí de la red solo por ti.', '¿Qué hacemos?'],
+  en: ['You called?', 'Here I am.', 'Jacked out of the net just for you.', 'What are we doing?'],
+  fr: ['Tu m’as appelée ?', 'Me voilà.', 'Sortie du réseau rien que pour toi.', 'On fait quoi ?'],
+  pt: ['Me chamou?', 'Tô aqui.', 'Saí da rede só por você.', 'O que a gente faz?'],
+  ru: ['Звал(а)?', 'Я здесь.', 'Вышла из сети только ради тебя.', 'Что делаем?'],
+  vi: ['Bạn gọi mình hả?', 'Mình đây.', 'Mình rời mạng chỉ vì bạn đó.', 'Mình làm gì đây?'],
+  ja: ['呼んだ？', 'ここにいるよ。', 'あなたのためにネットから抜けてきたの。', '何する？'],
+  de: ['Hast du gerufen?', 'Hier bin ich.', 'Nur für dich aus dem Netz ausgestöpselt.', 'Was machen wir?'],
+  it: ['Mi hai chiamata?', 'Eccomi.', 'Mi sono scollegata dalla rete solo per te.', 'Che facciamo?'],
+};
+function summon() {
+  const capri = window.dev?.capri;
+  if (cfg.visible !== false) return toggleVisible(false);
+  toggleVisible(true);
+  setTimeout(() => {
+    capri?.flash?.([[0.21, 1, 0.48], [1, 0.13, 0.32], [0.08, 0.06, 0.11]]);
+    const lines = SUMMON_LINES[resolveLang(cfg.lang)] || SUMMON_LINES.en;
+    window.dev?.panel?.say({ kind: 'info', face: 'smug', line: lines[Math.floor(Math.random() * lines.length)], hold: 3500 });
+  }, 650);
+}
+
+// ---------- her menu (the tray menu of main.js, drawn in the page) ----------
+
+// Her menu's desktop words, the phone's way (the desktop-only entries are left out of it:
+// looking at your PC's screen, being jealous of other AIs' browser pages)
+// Emma's community: her Discord and her TikTok (also at the end of the app's Ajustes)
+const COMMUNITY = { discord: 'https://discord.gg/hmh783tfn', tiktok: 'https://www.tiktok.com/@emma180516_' };
+
+const PHONE_LABELS = {
+  es: {
+    wardrobe: 'Vestuario (vestirla)',
+    seesKey: '👁 = puede ver tu pantalla',
+    battery: 'Avisos de batería', batteryOn: 'Avisarme', batteryFull: 'Cuando se cargue al', batteryLow: 'Cuando baje al', breaks: 'Recordarme descansar', breakEvery: 'Después de', hours: '{n} h',
+    possess: 'Poseer sus tarjetas', gamer: 'Modo gamer', icon: 'Modo ícono (solo su máscara)', float: 'Sin gravedad (se queda donde la pongas)', community: 'Únete a la comunidad', startup: 'Iniciar con el teléfono', pcReact: 'Reaccionar a mi teléfono',
+    motionAuto: 'Como el teléfono', restTaskbar: 'Sentada abajo, en el borde', theme: 'Estilo de sus paneles',
+    soundsDir: 'Dónde poner sonidos propios',
+    provOllama: 'Ollama de tu PC', provFree: 'Gratis, sin cuenta (Pollinations)', provCustom: 'Servidor propio (dirección)',
+    secHer: 'Ella', secAi: 'Su IA', secPhone: 'Tu teléfono', secMore: 'Más', service: 'Servicio', model: 'Modelo', noModels: 'Sin modelos todavía',
+    lookNow: 'Mira mi pantalla', lookAuto: 'Ver mi pantalla en vivo', ghost: 'Modo fantasma (solo se toca su cara)',
+  },
+  en: {
+    wardrobe: 'Wardrobe (dress her)',
+    seesKey: '👁 = can look at your screen',
+    battery: 'Battery alerts', batteryOn: 'Tell me', batteryFull: 'When it charges to', batteryLow: 'When it drops to', breaks: 'Remind me to take breaks', breakEvery: 'After', hours: '{n} h',
+    possess: 'Possess her cards', gamer: 'Gamer mode', icon: 'Icon mode (just her mask)', float: 'No gravity (stays where you put her)', community: 'Join the community', startup: 'Start with the phone', pcReact: 'React to my phone',
+    motionAuto: 'Like the phone', restTaskbar: 'Sitting on the bottom edge', theme: 'Her panels’ style',
+    soundsDir: 'Where to put my own sounds',
+    provOllama: 'Your PC’s Ollama', provFree: 'Free, no account (Pollinations)', provCustom: 'Your own server (address)',
+    secHer: 'Her', secAi: 'Her AI', secPhone: 'Your phone', secMore: 'More', service: 'Service', model: 'Model', noModels: 'No models yet',
+    lookNow: 'Look at my screen', lookAuto: 'Watch my screen live', ghost: 'Ghost mode (only her face takes touches)',
+  },
+  fr: {
+    wardrobe: 'Garde-robe (l’habiller)',
+    seesKey: '👁 = peut voir ton écran',
+    battery: 'Alertes de batterie', batteryOn: 'Me prévenir', batteryFull: 'Quand elle est chargée à', batteryLow: 'Quand elle descend à', breaks: 'Me rappeler de faire des pauses', breakEvery: 'Après', hours: '{n} h',
+    possess: 'Posséder ses cartes', gamer: 'Mode gamer', icon: 'Mode icône (juste son masque)', float: 'Sans gravité (reste où tu la poses)', community: 'Rejoins la communauté', startup: 'Démarrer avec le téléphone', pcReact: 'Réagir à mon téléphone',
+    motionAuto: 'Comme le téléphone', restTaskbar: 'Assise en bas, sur le bord', theme: 'Style de ses panneaux',
+    soundsDir: 'Où mettre mes propres sons',
+    provOllama: 'L’Ollama de ton PC', provFree: 'Gratuit, sans compte (Pollinations)', provCustom: 'Ton propre serveur (adresse)',
+    secHer: 'Elle', secAi: 'Son IA', secPhone: 'Ton téléphone', secMore: 'Plus', service: 'Service', model: 'Modèle', noModels: 'Pas encore de modèles',
+    lookNow: 'Regarde mon écran', lookAuto: 'Voir mon écran en direct', ghost: 'Mode fantôme (seul son visage se touche)',
+  },
+  pt: {
+    wardrobe: 'Guarda-roupa (vestir)',
+    seesKey: '👁 = consegue ver sua tela',
+    battery: 'Avisos de bateria', batteryOn: 'Me avisar', batteryFull: 'Quando carregar até', batteryLow: 'Quando cair para', breaks: 'Me lembrar de descansar', breakEvery: 'Depois de', hours: '{n} h',
+    possess: 'Possuir os cartões', gamer: 'Modo gamer', icon: 'Modo ícone (só a máscara)', float: 'Sem gravidade (fica onde você colocar)', community: 'Entre na comunidade', startup: 'Iniciar com o celular', pcReact: 'Reagir ao meu celular',
+    motionAuto: 'Como o celular', restTaskbar: 'Sentada embaixo, na borda', theme: 'Estilo dos painéis',
+    soundsDir: 'Onde pôr meus próprios sons',
+    provOllama: 'Ollama do seu PC', provFree: 'Grátis, sem conta (Pollinations)', provCustom: 'Servidor próprio (endereço)',
+    secHer: 'Ela', secAi: 'A IA dela', secPhone: 'Seu celular', secMore: 'Mais', service: 'Serviço', model: 'Modelo', noModels: 'Nenhum modelo ainda',
+    lookNow: 'Olha minha tela', lookAuto: 'Ver minha tela ao vivo', ghost: 'Modo fantasma (só o rosto se toca)',
+  },
+  ru: {
+    wardrobe: 'Гардероб (наряды)',
+    seesKey: '👁 = видит твой экран',
+    battery: 'Уведомления о батарее', batteryOn: 'Сообщать', batteryFull: 'Когда зарядится до', batteryLow: 'Когда упадёт до', breaks: 'Напоминать о перерывах', breakEvery: 'Через', hours: '{n} ч',
+    possess: 'Захватывать карточки', gamer: 'Игровой режим', icon: 'Режим иконки (только маска)', float: 'Без гравитации (остаётся, где поставишь)', community: 'Сообщество', startup: 'Запускать с телефоном', pcReact: 'Реагировать на телефон',
+    motionAuto: 'Как на телефоне', restTaskbar: 'Сидя внизу, на краю', theme: 'Стиль её панелей',
+    soundsDir: 'Куда класть свои звуки',
+    provOllama: 'Ollama на твоём ПК', provFree: 'Бесплатно, без аккаунта (Pollinations)', provCustom: 'Свой сервер (адрес)',
+    secHer: 'Она', secAi: 'Её ИИ', secPhone: 'Твой телефон', secMore: 'Ещё', service: 'Сервис', model: 'Модель', noModels: 'Пока нет моделей',
+    lookNow: 'Посмотри на мой экран', lookAuto: 'Смотреть мой экран вживую', ghost: 'Режим призрака (трогается только лицо)',
+  },
+  vi: {
+    wardrobe: 'Tủ đồ (mặc đồ cho cô ấy)',
+    seesKey: '👁 = có thể nhìn màn hình của bạn',
+    battery: 'Cảnh báo pin', batteryOn: 'Báo cho mình', batteryFull: 'Khi sạc đến', batteryLow: 'Khi giảm xuống', breaks: 'Nhắc mình nghỉ giải lao', breakEvery: 'Sau', hours: '{n} giờ',
+    possess: 'Nhập vào thẻ của cô ấy', gamer: 'Chế độ game', icon: 'Chế độ biểu tượng (chỉ mặt nạ)', float: 'Không trọng lực (ở yên chỗ bạn đặt)', community: 'Tham gia cộng đồng', startup: 'Khởi động cùng điện thoại', pcReact: 'Phản ứng với điện thoại của mình',
+    motionAuto: 'Giống điện thoại', restTaskbar: 'Ngồi ở cạnh dưới', theme: 'Kiểu bảng của cô ấy',
+    soundsDir: 'Nơi để âm thanh riêng của mình',
+    provOllama: 'Ollama trên PC của bạn', provFree: 'Miễn phí, không cần tài khoản (Pollinations)', provCustom: 'Máy chủ của bạn (địa chỉ)',
+    secHer: 'Cô ấy', secAi: 'AI của cô ấy', secPhone: 'Điện thoại của bạn', secMore: 'Thêm', service: 'Dịch vụ', model: 'Mô hình', noModels: 'Chưa có mô hình',
+    lookNow: 'Nhìn màn hình của mình', lookAuto: 'Xem màn hình trực tiếp', ghost: 'Chế độ bóng ma (chỉ mặt cô ấy nhận chạm)',
+  },
+  ja: {
+    wardrobe: 'ワードローブ（着せ替え）',
+    seesKey: '👁 = 画面を見られる',
+    battery: 'バッテリー通知', batteryOn: '教えて', batteryFull: '充電がここまで来たら', batteryLow: 'ここまで下がったら', breaks: '休憩をリマインド', breakEvery: '間隔', hours: '{n}時間',
+    possess: '彼女のカードに憑依', gamer: 'ゲーマーモード', icon: 'アイコンモード（マスクだけ）', float: '無重力（置いた場所にとどまる）', community: 'コミュニティに参加', startup: 'スマホと一緒に起動', pcReact: 'スマホに反応する',
+    motionAuto: 'スマホと同じ', restTaskbar: '下の端に座る', theme: 'パネルのスタイル',
+    soundsDir: '自分のサウンドを置く場所',
+    provOllama: 'PCのOllama', provFree: '無料・アカウント不要（Pollinations）', provCustom: '自分のサーバー（アドレス）',
+    secHer: '彼女', secAi: '彼女のAI', secPhone: 'あなたのスマホ', secMore: 'その他', service: 'サービス', model: 'モデル', noModels: 'モデルがまだありません',
+    lookNow: '画面を見て', lookAuto: '画面をライブで見る', ghost: 'ゴーストモード（顔だけタッチに反応）',
+  },
+  de: {
+    wardrobe: 'Kleiderschrank (zieh sie an)',
+    seesKey: '👁 = kann deinen Bildschirm sehen',
+    battery: 'Akku-Hinweise', batteryOn: 'Sag’s mir', batteryFull: 'Wenn er lädt bis', batteryLow: 'Wenn er fällt auf', breaks: 'Erinnere mich an Pausen', breakEvery: 'Nach', hours: '{n} h',
+    possess: 'Ihre Karten besetzen', gamer: 'Gamer-Modus', icon: 'Icon-Modus (nur ihre Maske)', float: 'Schwerelos (bleibt, wo du sie hinsetzt)', community: 'Der Community beitreten', startup: 'Mit dem Handy starten', pcReact: 'Auf mein Handy reagieren',
+    motionAuto: 'Wie das Handy', restTaskbar: 'Sitzt am unteren Rand', theme: 'Stil ihrer Fenster',
+    soundsDir: 'Wohin meine eigenen Sounds kommen',
+    provOllama: 'Ollama auf deinem PC', provFree: 'Kostenlos, ohne Konto (Pollinations)', provCustom: 'Dein eigener Server (Adresse)',
+    secHer: 'Sie', secAi: 'Ihre KI', secPhone: 'Dein Handy', secMore: 'Mehr', service: 'Dienst', model: 'Modell', noModels: 'Noch keine Modelle',
+    lookNow: 'Schau auf meinen Bildschirm', lookAuto: 'Meinen Bildschirm live ansehen', ghost: 'Geistermodus (nur ihr Gesicht reagiert auf Berührung)',
+  },
+  it: {
+    wardrobe: 'Guardaroba (vestila)',
+    seesKey: '👁 = può guardare il tuo schermo',
+    battery: 'Avvisi batteria', batteryOn: 'Avvisami', batteryFull: 'Quando si carica fino a', batteryLow: 'Quando scende a', breaks: 'Ricordami le pause', breakEvery: 'Dopo', hours: '{n} h',
+    possess: 'Possiedi le sue schede', gamer: 'Modalità gamer', icon: 'Modalità icona (solo la maschera)', float: 'Senza gravità (resta dove la metti)', community: 'Unisciti alla community', startup: 'Avvia con il telefono', pcReact: 'Reagisci al mio telefono',
+    motionAuto: 'Come il telefono', restTaskbar: 'Seduta sul bordo in basso', theme: 'Stile dei suoi pannelli',
+    soundsDir: 'Dove mettere i miei suoni',
+    provOllama: 'Ollama sul tuo PC', provFree: 'Gratis, senza account (Pollinations)', provCustom: 'Il tuo server (indirizzo)',
+    secHer: 'Lei', secAi: 'La sua IA', secPhone: 'Il tuo telefono', secMore: 'Altro', service: 'Servizio', model: 'Modello', noModels: 'Ancora nessun modello',
+    lookNow: 'Guarda il mio schermo', lookAuto: 'Guarda il mio schermo dal vivo', ghost: 'Modalità fantasma (solo il viso risponde al tocco)',
+  },
+};
+
+function menuTemplate() {
+  const tray = { ...TRAY[resolveLang(cfg.lang)], ...(PHONE_LABELS[resolveLang(cfg.lang)] || {}) };
+  const t = Object.fromEntries(Object.entries(tray).map(([key, value]) =>
+    [key, typeof value === 'string' && activeAssistant().id !== 'claude' ? value.replaceAll('Claude Code', activeAssistant().name) : value]));
+  const watched = activeAssistant();
+  const hookState = hooksStatus();
+  const xp = cfg.bond?.xp || 0;
+  const stage = [0, 100, 300, 550, 850].filter((at) => xp >= at).length - 1;
+  const reminders = [...(cfg.reminders || [])].sort((a, b) => a.at - b.at);
+  const when = (at) => {
+    const d = new Date(at);
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return new Intl.DateTimeFormat(resolveLang(cfg.lang), sameDay ? { hour: '2-digit', minute: '2-digit' } : { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(d);
+  };
+  const cancelReminder = (id) => updateConfig({ reminders: (cfg.reminders || []).filter((r) => r.id !== id) });
+
+  const short = (name) => String(name || '').replace(/^models\//, '');
+  // her AI in two steps: the service, then (in it) its model
+  const services = Object.entries(llm.PROVIDERS)
+    // not Claude Code (the terminal agent), nor the servers that only run on a computer's own 127.0.0.1
+    .filter(([id]) => !['claude', 'lmstudio', 'llamacpp'].includes(id))
+    .map(([provider, p]) => {
+      const current = cfg.provider === provider;
+      const name = { ollama: t.provOllama, pollinations: t.provFree, custom: t.provCustom }[provider] || p.label;
+      const eye = (name) => (modelSees(name, provider) ? ' 👁' : '');
+      const models = current && chatModels?.length
+        ? chatModels.map((name) => ({
+          label: (cloud.free.includes(name) ? `${short(name)} · ${t.cloudFree}` : short(name)) + eye(name),
+          type: 'radio', checked: name === pickModel(cfg), click: () => updateConfig({ chatModel: name }),
+        }))
+        : [{ label: current && chatError ? chatError.slice(0, 80) : t.noModels, enabled: false }];
+      const sees = SERVICE_SEES.has(provider) ? ' 👁' : '';
+      return {
+        title: name + sees,
+        label: (current && pickModel(cfg) && provider !== 'pollinations' ? `${name} · ${short(pickModel(cfg))}` : name) + sees,
+        type: 'radio',
+        checked: current,
+        submenu: [
+          { type: 'header', label: t.model },
+          ...models,
+          ...(provider === 'ollama' && current && chatModels ? [
+            ...cloud.free.filter((name) => !chatModels.includes(name)).map((name) => ({
+              label: `${name} · ${t.cloudFree}`, type: 'radio', checked: false, click: () => fetchModel(name).catch(noop),
+            })),
+            ...(cloud.account?.signin ? [{ label: t.cloudSignin, click: () => send('open:url', { url: cloud.account.signin }) }] : []),
+          ] : []),
+          ...(provider in KEY_PAGES || provider === 'custom' ? [{ type: 'separator' }, { label: t.apiKey, click: () => sendCommand('setupKey') }] : []),
+        ],
+        // picked: she switches to it, and its models show here (or she asks for its key)
+        open: async () => {
+          if (!current) await pickProvider(provider);
+          else await refreshModels();
+          if (chatErrorCode === 'nokey' || chatErrorCode === 'nourl') menu.close();
+        },
+      };
+    });
+
+  return [
+    { label: t.online(PORT), enabled: false },
+    { label: t.sync(Math.min(100, Math.floor(xp / 10)), t.stages[stage]), enabled: false },
+
+    { type: 'header', label: t.secAi },
+    {
+      label: t.chatModel,
+      submenu: [
+        { label: t.aiSetup, click: () => sendCommand('setupChat') },
+        { label: t.seesKey, enabled: false },
+        { type: 'header', label: t.service },
+        ...services,
+        { type: 'separator' },
+        { label: t.forget, click: forgetChats },
+      ],
+      open: () => refreshModels(),
+    },
+    {
+      label: t.reminders,
+      submenu: reminders.length
+        ? reminders.map((r) => ({
+          label: `${when(r.at)} · ${(r.text || '…').slice(0, 50)}`,
+          submenu: [{ label: t.cancelReminder, click: () => cancelReminder(r.id) }],
+        }))
+        : [{ label: t.noReminders, enabled: false }],
+    },
+    { label: t.custom, click: () => sendCommand('customize') },
+    { label: t.wardrobe, click: () => closet?.open() },
+
+    { type: 'header', label: t.secHer },
+    {
+      label: t.size,
+      submenu: [[t.small, 0.45], [t.medium, 0.6], [t.large, 0.8]].map(([label, scale]) => ({
+        label, type: 'radio', checked: Math.abs(cfg.scale - scale) < 0.01, click: () => updateConfig({ scale }),
+      })),
+    },
+    {
+      label: t.sound,
+      submenu: [
+        { label: t.mute, type: 'checkbox', checked: cfg.muted, click: (item) => updateConfig({ muted: item.checked }) },
+        { type: 'separator' },
+        { label: t.soundsDir, click: () => send('sounds:open') },
+      ],
+    },
+    { label: t.wander, type: 'checkbox', checked: cfg.wander, click: (item) => updateConfig({ wander: item.checked }) },
+    {
+      label: t.rest,
+      submenu: [['corner', t.restCorner], ['taskbar', t.restTaskbar]].map(([rest, label]) => ({
+        label, type: 'radio', checked: cfg.rest === rest, click: () => updateConfig({ rest }),
+      })),
+    },
+    {
+      label: t.theme,
+      submenu: [['nightcity', 'Night City'], ['classic', t.themeClassic]].map(([theme, label]) => ({
+        label, type: 'radio', checked: cfg.theme === theme, click: () => updateConfig({ theme }),
+      })),
+    },
+    {
+      label: t.motion,
+      submenu: [['auto', t.motionAuto], ['full', t.motionFull], ['reduced', t.motionReduced]].map(([motion, label]) => ({
+        label, type: 'radio', checked: cfg.motion === motion, click: () => updateConfig({ motion, motionAsked: true }),
+      })),
+    },
+    {
+      label: t.lang,
+      submenu: [[t.auto, 'auto'], ...LANGS.map((lang) => [TRAY[lang].name, lang])].map(([label, lang]) => ({
+        label, type: 'radio', checked: cfg.lang === lang, click: () => { updateConfig({ lang }); send('lang:app', { lang }); }, // (1.12.2) the app too (Lang.kt)
+      })),
+    },
+
+    { type: 'header', label: t.secPhone },
+    { label: t.possess, type: 'checkbox', checked: cfg.possess, click: (item) => updateConfig({ possess: item.checked }) },
+    ...(notes ? [notes.menu(updateConfig)] : []),
+    { label: t.pcReact, type: 'checkbox', checked: cfg.pcReact !== false, click: (item) => updateConfig({ pcReact: item.checked }) },
+    {
+      label: t.battery,
+      submenu: [
+        { label: t.batteryOn, type: 'checkbox', checked: cfg.batteryAlerts !== false, click: (item) => updateConfig({ batteryAlerts: item.checked }) },
+        { type: 'separator' },
+        { label: t.batteryFull, enabled: false },
+        ...[80, 85, 90, 95, 100].map((n) => ({ label: `${n}%`, type: 'radio', checked: Number(cfg.batteryFull || 100) === n, click: () => updateConfig({ batteryFull: n, batteryAlerts: true }) })),
+        { type: 'separator' },
+        { label: t.batteryLow, enabled: false },
+        ...[5, 10, 15, 20, 30].map((n) => ({ label: `${n}%`, type: 'radio', checked: Number(cfg.batteryLow || 15) === n, click: () => updateConfig({ batteryLow: n, batteryAlerts: true }) })),
+      ],
+    },
+    {
+      label: t.breaks,
+      submenu: [
+        { label: t.batteryOn, type: 'checkbox', checked: cfg.breaks !== false, click: (item) => updateConfig({ breaks: item.checked }) },
+        { type: 'separator' },
+        { label: t.breakEvery, enabled: false },
+        ...[1, 2, 3].map((n) => ({ label: t.hours.replace('{n}', n), type: 'radio', checked: Number(cfg.breakHours || 2) === n, click: () => updateConfig({ breakHours: n, breaks: true }) })),
+      ],
+    },
+    {
+      label: t.startup, type: 'checkbox', checked: Boolean(cfg.startOnBoot),
+      click: (item) => updateConfig({ startOnBoot: item.checked }),
+    },
+
+    { type: 'header', label: t.secMore },
+    { label: t.help, click: () => sendCommand('welcome') },
+    { label: t.demo, click: playDemo },
+    ...(cfg.claude ? [{ label: t.report, click: () => sendCommand('report') }] : []),
+    {
+      label: t.watch,
+      submenu: [
+        ...Object.entries(ASSISTANTS).map(([id, { name }]) => ({
+          label: name,
+          type: 'radio',
+          checked: cfg.claude && watched.id === id,
+          click: () => {
+            const other = watched.id !== id;
+            updateConfig({ claude: true, assistant: id, ...(other && { linked: false, welcomed: false, hooksCopied: false }) });
+            if (other) sendCommand('assistantChanged');
+          },
+        })),
+        { label: t.watchNone, type: 'radio', checked: !cfg.claude, click: () => updateConfig({ claude: false }) },
+      ],
+    },
+    ...(cfg.claude ? [
+      hookState.installed
+        ? { label: t.hooksOn, enabled: false }
+        : { label: t.hooksOff, click: () => runHooks('install') },
+      ...(hookState.installed ? [{ label: t.hooksRemove, click: () => runHooks('uninstall') }] : []),
+    ] : []),
+    {
+      label: t.community || 'Join the community',
+      submenu: [
+        { label: 'Discord', click: () => send('open:url', { url: COMMUNITY.discord }) },
+        { label: 'TikTok', click: () => send('open:url', { url: COMMUNITY.tiktok }) },
+      ],
+    },
+    { label: t.quit, click: () => send('app:quit') },
+  ];
+}
+
+// her menus: the quick one when you hold her (quick.js), all her settings from it (menu.js); the
+// screen behind blurred while either is up
+let blurred = false;
+const blur = () => {
+  const on = Boolean(menu?.isOpen || quick?.isOpen || closet?.isOpen);
+  if (on === blurred) return;
+  blurred = on;
+  send('overlay:blur', { on });
+};
+let closet = null; // her wardrobe (wardrobe.js), once her page is up
+const menu = new Menu(() => setTimeout(blur, 0));
+const syncLine = () => {
+  const t = { ...TRAY[resolveLang(cfg.lang)], ...(PHONE_LABELS[resolveLang(cfg.lang)] || {}) };
+  const xp = cfg.bond?.xp || 0;
+  const stage = [0, 100, 300, 550, 850].filter((at) => xp >= at).length - 1;
+  return t.sync(Math.min(100, Math.floor(xp / 10)), t.stages[stage]);
+};
+const quick = new QuickMenu({
+  cfg: () => cfg,
+  lang: () => resolveLang(cfg.lang),
+  sync: syncLine,
+  setConfig: updateConfig,
+  command: (name, payload) => sendCommand(name, payload),
+  perform: (name) => window.dev?.capri?.perform(name, window.dev.capri.towardCenter?.() || 1),
+  toggleVisible: () => toggleVisible(),
+  full: (at) => menu.open(menuTemplate, at),
+  openApp: () => send('app:open'),
+  blur: () => setTimeout(blur, 0),
+  wardrobe: () => closet?.open(),
+});
+const openMenu = (at) => {
+  if (menu.isOpen) menu.close();
+  quick.open(at);
+};
+
+// ---------- the touch layer: the finger as her mouse, and where she can be touched ----------
+
+const touch = new Touch();
+
+// ---------- the phone itself: what Kotlin does for her ----------
+
+// A call whose "no" is the desktop's own "no" for that call (null, false, [] ...)
+const ask = (method, fallback) => (args) => call(method, args).catch((err) => {
+  console.warn(`[capri] ${method}: ${err.message}`);
+  return typeof fallback === 'function' ? fallback(err) : fallback;
+});
+
+// ---------- window.host ----------
+
+const ready = loadConfig().then(async () => {
+  await loadMemory();
+  llm.restoreClaude(memory.claude);
+  refreshModels().catch(noop);
+});
+const after = (fn) => (...args) => ready.then(() => fn(...args));
+
+on('claude:event', (evt) => {
+  if (llm.isChatSession(evt?.session_id)) return;
+  if (!cfg.linked && evt?.session_id !== 'demo-session') updateConfig({ linked: true });
+});
+on('capri:command', (cmd) => {
+  if (cmd?.name === 'menu') return openMenu();
+  if (cmd?.name === 'toggle' || cmd?.name === 'summon') return summon();
+  if (cmd?.name === 'demo') return playDemo();
+  // the app's Settings (its wardrobe card): out if she's put away, then her wardrobe on her
+  if (cmd?.name === 'wardrobe') {
+    if (cfg.visible === false || window.dev?.capri?.hidden) toggleVisible(true);
+    return setTimeout(() => closet?.open(), 700);
+  }
+  for (const fn of listeners.command) fn(cmd);
+});
+
+window.host = {
+  onClaudeEvent: (fn) => on('claude:event', fn),
+  onCommand: sub(listeners.command),
+  onConfig: sub(listeners.config),
+  onResize: (fn) => on('overlay:resize', fn),
+  onWindows: (fn) => on('windows:update', fn),
+  setInteractive: (v) => touch.setInteractive(Boolean(v)),
+  rearm: noop,
+  cursor: async () => touch.cursor(),
+  screens: async () => ({
+    current: 1, origin: { x: 0, y: 0 }, list: [{ id: 1, x: 0, y: 0, w: innerWidth, h: innerHeight }],
+  }),
+  moveScreen: async () => null,
+  getConfig: after(() => rendererConfig()),
+  setConfig: after((patch) => {
+    // what her renderer asks for that the desktop's main.js would act on
+    if (patch && 'startOnBoot' in patch) send('boot:set', { on: Boolean(patch.startOnBoot) });
+    return updateConfig(patch || {});
+  }),
+  listSounds: ask('sounds:list', []),
+  hooksStatus: after(() => hooksStatus()),
+  demoWindow: async () => false, // no little terminal for her to sit on: no windows to sit on here
+  openMenu: () => openMenu(touch.lastPoint()),
+  installHooks: after(() => runHooks('install', { quiet: true })),
+  claudeFound: async () => true, // Claude Code may well be in Termux, or on your PC: she offers to plug in
+  openClaudeHelp: () => send('open:url', { url: activeAssistant().help }),
+  windowsNow: async () => notes?.snapshot() || null,
+  closePage: async () => 'gone',
+  trayPlace: async () => ({
+    // her "tray icon" is her notification, at the top of the screen
+    icon: null,
+    corner: { x: Math.round(innerWidth / 2 - 70), y: 0, w: 140, h: 28 },
+  }),
+  openClaudeFolder: async () => ({ found: false, dir: '~/.claude (Termux)' }),
+  copyImage: ask('panel:copy', false),
+  chatStatus: after(async () => {
+    const { provider } = cfg;
+    const models = await refreshModels();
+    if (!models) {
+      // (1.13.0) no internet either, but the downloaded model on this phone answers — and
+      // outranks her phrase brain (chatSend tries it first when a chat dies offline)
+      const s = await litertReady().catch(() => null);
+      if (s?.ready && offlineDown()) return { ok: true, provider, model: s.model || LITERT_MODEL, local: true, offline: true };
+      // (1.12.5) no internet: her chat still opens, on her brain on this phone (local-brain.js
+      // answers in chatSend) instead of the 'offline' card; other failures keep the card
+      if (offlineDown()) return { ok: true, provider, model: LOCAL_MODEL, local: true, offline: true };
+      return { ok: false, error: chatError || 'offline', code: chatErrorCode, provider };
+    }
+    if (!models.length) return { ok: false, error: 'nomodel', provider };
+    const model = pickModel();
+    llm.warm(provider, model);
+    warmLink(provider);
+    const local = llm.isLocal(provider, cfg, model);
+    return { ok: true, provider, model, agent: provider === 'claude', local, warmup: provider === 'ollama' && local };
+  }),
+  chatSend: after(async ({ id, messages, background = false }) => {
+    // (1.11.8) her notes about you and her braindances (memory.js, neuro.js) never get in the way of a
+    // message of yours: they wait for it, and one already running gives way to it
+    if (background && [...chats.keys()].some((k) => !quiet.has(k))) return { ok: false, error: 'busy', code: 'busy' };
+    if (!background) for (const k of quiet) chats.get(k)?.abort();
+    const abort = new AbortController();
+    chats.set(id, abort);
+    if (background) quiet.add(id);
+    let written = '';
+    let lastWord = Date.now();
+    let stalled = false;
+    const remote = !['ollama', 'claude'].includes(cfg.provider); // (a model on your PC may take a while to load)
+    // (1.11.8, Emma: "se quedó pensando en el chat") an answer that stops coming halfway (the connection
+    // dropped without closing) ends with what was written; and nothing runs forever
+    const watch = setInterval(() => {
+      const quietFor = Date.now() - lastWord;
+      if ((written && quietFor > STALL_MS) || (remote && quietFor > LONGEST_MS)) { stalled = true; abort.abort(); }
+    }, 2000);
+    try {
+      // (1.12.5) her brain on this phone answers here, with no network at all; her background asks
+      // (her notes about you, her braindances) can't be done by it — they wait for a real AI,
+      // exactly as they do when you're offline with any other brain
+      if (cfg.provider === 'local') {
+        if (background) return { ok: false, error: 'offline', code: 'offline' };
+        return { ok: true, text: localAnswer(messages, { facts: readMemory().facts || [], name: cfg.userName || '' }) || '…' };
+      }
+      // (1.13.0) the model on this phone (LiteRT-LM): a real brain, still no network at all.
+      // Her background asks may use it too — it does think, unlike her phrase brain. It doesn't
+      // stream: the whole answer lands at once, like her phrase brain's.
+      if (cfg.provider === 'litert') {
+        const s = await litertReady();
+        if (!s.ready) return { ok: false, error: 'nomodel', code: 'nomodel' };
+        const text = await litertChat(messages, abort.signal);
+        return { ok: true, text, local: true };
+      }
+      let streamed = false;
+      const sendDelta = (text) => {
+        streamed = true;
+        written += String(text || '');
+        lastWord = Date.now();
+        emit('chat:delta', { id, text });
+      };
+      const run = background ? chatOnce : chatWithFallback;
+      const text = await run(cfg, messages, sendDelta, abort.signal, () => streamed);
+      return { ok: true, text };
+    } catch (err) {
+      if (stalled && written.trim()) {
+        send('log', { level: 'W', text: 'AI: her answer stopped coming halfway; kept what was written' });
+        return { ok: true, text: written, cut: true };
+      }
+      if (stalled) return { ok: false, error: friendly('timeout'), code: 'busy' };
+      // (1.12.5) no internet, and no other brain answered: she answers from this phone instead of
+      // the 'offline' card — only your own messages, never her background asks, never mid-answer,
+      // and never when you stopped her yourself
+      if (!background && !written.trim() && !abort.signal.aborted && offlineDown(err)) {
+        // (1.13.0) a real model on the phone outranks her phrase brain when it's downloaded
+        const s = await litertReady().catch(() => null);
+        if (s?.ready) {
+          try {
+            const text = await litertChat(messages, abort.signal);
+            if (text) {
+              send('log', { level: 'W', text: 'AI: no internet — she answered with the model on this phone (LiteRT)' });
+              return { ok: true, text, local: true };
+            }
+          } catch {}
+        }
+        const text = localAnswer(messages, { facts: readMemory().facts || [], name: cfg.userName || '' });
+        if (text) {
+          send('log', { level: 'W', text: 'AI: no internet — she answered from this phone (local-brain)' });
+          return { ok: true, text, local: true };
+        }
+      }
+      return { ok: false, error: abort.signal.aborted ? 'stopped' : friendly(err.message), code: err.code || null };
+    } finally {
+      clearInterval(watch);
+      chats.delete(id);
+      quiet.delete(id);
+      linkUsed.set(cfg.provider, Date.now());
+    }
+  }),
+  chatStop: (id) => chats.get(id)?.abort(),
+  chatMemory: after(() => readMemory().history || []),
+  chatRemember: (history) => Array.isArray(history) && saveMemory({ history }),
+  onChatDelta: (fn) => on('chat:delta', fn),
+  // a picture that isn't your screen (shared with her: share.js): looked at like a snap
+  lookPut: (image) => {
+    const id = crypto.randomUUID();
+    snaps.set(id, { image: String(image || ''), self: [], shared: true });
+    setTimeout(() => snaps.delete(id), 120000);
+    return id;
+  },
+  lookSnap: after(async () => {
+    try {
+      if (await cantSee()) return { ok: true, id: 'blind' }; // she says why when she'd comment (lookSay)
+      // (1.12.0) the wait you set (the app's Settings › Modes): your keyboard and her bubble out of the way first
+      const wait = Math.min(10, Math.max(0, Number(cfg.snapDelay) || 0));
+      if (wait) { window.dev?.panel?.close?.(); await new Promise((r) => setTimeout(r, wait * 1000)); }
+      const self = touch.selfRects(); // where she is right as it's taken
+      const res = await call('look:snap');
+      const id = crypto.randomUUID();
+      snaps.set(id, { image: res.image, self });
+      setTimeout(() => snaps.delete(id), 120000);
+      return { ok: true, id };
+    } catch (err) {
+      return { ok: false, error: friendly(err.message) };
+    }
+  }),
+  lookSay: after((request) => sayAboutSnap(request || {})),
+  hearSay: after((request) => hearSound(request || {})), // (1.12.0) a song or a sound, to Gemini
+  hearRecord: (seconds) => call('audio:record', { seconds: Math.min(15, Math.max(3, Number(seconds) || 10)) }).catch(() => null),
+  // until when every model she looks with is resting (ran out): her live looks wait till then
+  lookResting: () => aiResting(lookModels()),
+  lookWhere: after(() => {
+    const model = ['ollama', 'pollinations', 'custom'].includes(cfg.provider) ? pickModel(cfg) : lookModel() || pickModel(cfg);
+    const provider = cfg.provider === 'ollama' && ollama.isCloud(model) ? 'Ollama' : llm.PROVIDERS[cfg.provider]?.label || cfg.provider;
+    return { local: llm.isLocal(cfg.provider, cfg, model), provider, model };
+  }),
+  // asked every 3 s (pc.js); the phone's heat changes slowly: asked of Android every 15 s at most
+  cpu: (() => {
+    const real = ask('pc:cpu', null);
+    let last = null;
+    let at = -Infinity;
+    return async () => {
+      if (performance.now() - at < 15000) return last;
+      at = performance.now();
+      last = await real();
+      return last;
+    };
+  })(),
+  pcDo: ask('pc:do', null),
+  openOllama: () => send('open:url', { url: OLLAMA_SITE }),
+  setupInfo: after(async () => {
+    const { free } = (await ollama.models().catch(() => null)) ? await refreshCloud() : { free: [] };
+    return { models: MODELS, cloud: free, ram: device.ram, keyed: Object.keys(KEY_PAGES) };
+  }),
+  ollamaState: after(async () => {
+    const models = await ollama.models().catch(() => null);
+    return { running: Boolean(models), installed: Boolean(models), models, winget: false };
+  }),
+  // your PC's Ollama, by its IP (setup.js on Android): kept only if it answers there
+  setOllamaHost: after(async (address) => {
+    let host = String(address || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    if (host && !/:\d+$/.test(host)) host += ':11434';
+    const before = cfg.ollamaHost;
+    updateConfig({ ollamaHost: host });
+    const models = await ollama.models().catch(() => null);
+    if (!models) updateConfig({ ollamaHost: before });
+    return { running: Boolean(models), host };
+  }),
+  // Ollama on a phone runs in Termux: the command to get it goes on your clipboard
+  installOllama: ask('ollama:install', (err) => ({ ok: false, error: err.message })),
+  startOllama: after(async () => {
+    const res = await call('ollama:start').catch((err) => ({ ok: false, error: err.message }));
+    await refreshModels();
+    return res;
+  }),
+  pullModel: after(async (name) => {
+    if (!MODELS.some((m) => m.name === name) && !cloud.free.includes(name)) return { ok: false, error: 'unknown model' };
+    pulling?.abort();
+    const abort = new AbortController();
+    pulling = abort;
+    try {
+      const model = await fetchModel(name, (p) => emit('setup:progress', { kind: 'pull', ...p }), abort.signal);
+      return { ok: true, model };
+    } catch (err) {
+      return { ok: false, error: abort.signal.aborted ? 'stopped' : err.message };
+    } finally {
+      if (pulling === abort) pulling = null;
+    }
+  }),
+  cancelSetup: () => pulling?.abort(),
+  useProvider: after(async ({ provider, key, url }) => {
+    if (!llm.PROVIDERS[provider]) return { ok: false, error: 'unknown provider' };
+    // (1.13.0) before any brain change, where she was is kept (RestorePoints.kt): «Regresar
+    // como estaba» in Su mente brings her memory and this back
+    await call('brain:checkpoint', {}).catch(() => {});
+    if (provider === 'nvidia' && key) {
+      const bad = await nvidiaKeyBad(String(key).trim());
+      if (bad) return { ok: false, error: bad };
+    }
+    const before = { provider: cfg.provider, apiKeys: cfg.apiKeys, customUrl: cfg.customUrl, ollamaHost: cfg.ollamaHost };
+    const patch = { provider };
+    if (key) patch.apiKeys = { ...before.apiKeys, [provider]: await call('keys:seal', { value: String(key).trim() }) };
+    // an address for Ollama is where Ollama is (your PC on your network); for the others, the server
+    if (url && provider === 'ollama') patch.ollamaHost = String(url).trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    else if (url) patch.customUrl = String(url).trim();
+    updateConfig(patch);
+    const models = await refreshModels({ fresh: true });
+    if (models?.length) return { ok: true, model: pickModel() };
+    const error = models ? 'no model' : chatError || 'offline';
+    // a key the server turned down goes; one that only met a slow or broken network stays (it was
+    // undone before, and she kept saying she had no AI)
+    if (key && !/40[13]|invalid|unauthor|incorrect|api key not valid/i.test(error)) {
+      send('log', { level: 'W', text: `AI ${provider}: kept the key (${error})` });
+      return { ok: true, model: null, pending: true };
+    }
+    updateConfig(before);
+    await refreshModels();
+    return { ok: false, error };
+  }),
+  keyPage: (provider) => KEY_PAGES[provider] && send('open:url', { url: KEY_PAGES[provider] }),
+  launchThroughOllama: ask('ollama:launch', { ok: false }),
+  onSetupProgress: (fn) => on('setup:progress', fn),
+  openApps: ask('apps:list', []),
+  findApp: ask('apps:find', null),
+  closeApp: (name, force) => call('apps:close', { name, force: Boolean(force) }).catch((err) => ({ error: err.message })),
+  // the phone's apps by name, matched the desktop's way (launch.js match())
+  findLaunch: async (text) => {
+    const items = await call('apps:launchables').catch(() => []);
+    const item = launch.match(items, String(text || ''));
+    return item && { ...item, risky: false };
+  },
+  launch: (item) => hack() && call('apps:launch', item).then(() => ({ ok: true }), (err) => ({ ok: false, error: err.message })),
+  media: ask('apps:media', false),
+  // (1.10.1) "en Spotify solo la busca y ya": Spotify plays it (Android's play-from-search); the search, if not
+  music: (query) => call('music:play', { query: String(query || '') }).then((ok) => ok || launch.music(query), () => launch.music(query)).catch(() => false),
+  youtube: (query) => launch.youtube(query).catch(() => null),
+  musicApp: () => cfg.musicApp || 'youtube', // (1.10.0) where a song you ask for plays (the app's Settings)
+  roblox: (query) => launch.roblox(query).catch(() => null),
+  searchFiles: ask('files:search', []),
+  openFile: (file, reveal) => call('files:open', { file: String(file), reveal: Boolean(reveal) }).then(() => true, () => false),
+  screenshot: ask('files:screenshot', null),
+  webSearch: async (query) => {
+    const q = String(query || '').trim().slice(0, 300);
+    if (!q) return false;
+    hack();
+    return call('open:url', { url: `https://www.google.com/search?q=${encodeURIComponent(q)}` }).then(() => true, () => false);
+  },
+  openSite: (address) => hack() && launch.site(address).catch(() => false),
+  focusOverlay: (v) => send('overlay:focus', { on: Boolean(v) }),
+};
+
+let pulling = null;
+
+// what the app's screen set (CapriSettings.kt) while she's on: what she calls you, her AI
+// Gamer mode on or off: she goes to sit small in a corner (or comes back), her cards away
+const GAMER_LINES = {
+  es: { on: ['Modo gamer. Me hago chiquita aquí, tú dale.', 'Modo gamer activado. No te estorbo, choom.'], off: ['¿Qué tal la partida?', 'Se acabó el modo gamer. ¿Ganaste?'] },
+  en: { on: ['Gamer mode. I’ll stay small over here, go get them.', 'Gamer mode on. I won’t get in your way, choom.'], off: ['How was the game?', 'Gamer mode off. Did you win?'] },
+  fr: { on: ['Mode gamer. Je me fais toute petite ici, vas-y.', 'Mode gamer activé. Je ne te gêne pas, choom.'], off: ['Alors, cette partie ?', 'Fin du mode gamer. T’as gagné ?'] },
+  pt: { on: ['Modo gamer. Fico pequenininha aqui, manda ver.', 'Modo gamer ligado. Não vou te atrapalhar, choom.'], off: ['Como foi a partida?', 'Acabou o modo gamer. Ganhou?'] },
+  ru: { on: ['Игровой режим. Я тут маленькая посижу, давай.', 'Игровой режим включён. Не мешаю, чум.'], off: ['Как игра?', 'Игровой режим выключен. Победил?'] },
+  vi: { on: ['Chế độ game. Mình sẽ ngồi nhỏ xíu ở đây, chiến đi.', 'Đã bật chế độ game. Mình không làm phiền đâu, choom.'], off: ['Trận đấu thế nào?', 'Đã tắt chế độ game. Bạn thắng không?'] },
+  ja: { on: ['ゲーマーモード。ここで小さくなってるから、行ってきて。', 'ゲーマーモードON。邪魔しないよ、チューム。'], off: ['ゲームどうだった？', 'ゲーマーモードOFF。勝った？'] },
+  de: { on: ['Gamer-Modus. Ich bleib hier klein, mach sie fertig.', 'Gamer-Modus an. Ich stör dich nicht, Choom.'], off: ['Wie war das Spiel?', 'Gamer-Modus aus. Hast du gewonnen?'] },
+  it: { on: ['Modalità gamer. Resto piccola qui, vai a vincere.', 'Modalità gamer attiva. Non ti disturbo, choom.'], off: ['Com’è andata la partita?', 'Modalità gamer disattivata. Hai vinto?'] },
+};
+function gamerMode(on) {
+  const dev = window.dev;
+  const capri = dev?.capri;
+  if (!capri) return;
+  notes?.gamer(on);
+  const lines = GAMER_LINES[resolveLang(cfg.lang)] || GAMER_LINES.en;
+  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+  if (!on) dev.poses?.end();
+  if (on) {
+    dev.chat?.close?.();
+    setTimeout(() => cutin('gamer'), 300);
+    // in her corner, sitting down to watch you play
+    if (!capri.hidden && !capri.busy) {
+      Promise.resolve(capri.teleport(capri.spot('post'))).then(() => {
+        setTimeout(() => cfg.gamer && !capri.busy && capri.perform?.('plop', capri.towardCenter?.() || 1), 600);
+      }).catch(noop);
+    }
+  } else if (!capri.hidden && !capri.busy) capri.teleport(capri.spot('random'));
+  dev.panel?.say({ kind: 'info', face: on ? 'smug' : 'laugh', line: pick(on ? lines.on : lines.off), hold: 3500 });
+}
+
+on('settings:apply', async (p = {}) => {
+  // (1.12.0) the model picked under each AI's key ("" = she chooses)
+  if (p.models && typeof p.models === 'object') updateConfig({ models: { ...(cfg.models || {}), ...p.models } });
+  if ('userName' in p) updateConfig({ userName: String(p.userName || '').trim().slice(0, 24) });
+  // her size, her ghost mode, how lively she is (the app's Settings)
+  if (typeof p.scale === 'number') updateConfig({ scale: Math.min(1.1, Math.max(0.3, p.scale)) });
+  if ('ghost' in p) updateConfig({ ghost: Boolean(p.ghost) });
+  if ('ghostCards' in p) updateConfig({ ghostCards: Boolean(p.ghostCards) }); // her cards too (notifications, music)
+  if (p.lively) updateConfig({ lively: String(p.lively) });
+  if ('gamer' in p) updateConfig({ gamer: Boolean(p.gamer) });
+  if (typeof p.lang === 'string') updateConfig({ lang: p.lang }); // Ajustes › Idioma (Lang.kt)
+  if ('float' in p) updateConfig({ float: Boolean(p.float) });
+  if ('longMemory' in p) updateConfig({ longMemory: Boolean(p.longMemory) });
+  // her battery alerts and breaks (the app's Settings)
+  for (const key of ['batteryAlerts', 'breaks']) if (key in p) updateConfig({ [key]: Boolean(p[key]) });
+  // (1.10.0) she dresses herself, and how often
+  if ('autoDress' in p) updateConfig({ autoDress: Boolean(p.autoDress), ...(p.autoDress ? { autoDressAt: 0 } : {}) });
+  if ([6, 12, 24].includes(Number(p.autoDressHours))) updateConfig({ autoDressHours: Number(p.autoDressHours) });
+  // (1.10.0) battery saver, and from what %
+  if ('saver' in p) { updateConfig({ saver: Boolean(p.saver) }); window.dev?.saver?.check(); }
+  if ([15, 20, 30].includes(Number(p.saverAt))) { updateConfig({ saverAt: Number(p.saverAt) }); window.dev?.saver?.check(); }
+  if (typeof p.batteryFull === 'number') updateConfig({ batteryFull: Math.min(100, Math.max(50, Math.round(p.batteryFull))) });
+  if (typeof p.batteryLow === 'number') updateConfig({ batteryLow: Math.min(50, Math.max(5, Math.round(p.batteryLow))) });
+  if (typeof p.breakHours === 'number') updateConfig({ breakHours: Math.min(6, Math.max(0.5, p.breakHours)) });
+  // the app's Settings: one thing she remembers about you, or all of it, forgotten
+  if (typeof p.forgetFact === 'string') saveMemory({ facts: (readMemory().facts || []).filter((f) => f !== p.forgetFact) });
+  if (p.forgetFacts) {
+    // and what you'd talked about so far isn't noted down again
+    const said = (readMemory().history || []).at(-1)?.content;
+    saveMemory({ facts: [], phrases: [], feeling: null, last: null, seen: said ? String(said).slice(0, 200) : null });
+  }
+  // (1.12.5) «Enseñarle un texto» in the app (Su mente): a file's lines, kept as things she remembers
+  if (Array.isArray(p.teachFacts)) {
+    const clean = p.teachFacts.map((f) => String(f || '').replace(/\s+/g, ' ').trim().slice(0, 160)).filter(Boolean);
+    if (clean.length) {
+      const known = readMemory().facts || [];
+      saveMemory({ facts: [...known, ...clean.filter((f) => !known.includes(f))].slice(0, 60) }); // (memory.js: at most 60)
+    }
+  }
+  // (1.13.0) her phone, more of it: several-step orders, and «Ella actúa sola» with its limits
+  if ('controlSteps' in p) updateConfig({ controlSteps: Boolean(p.controlSteps) });
+  if ('actsAlone' in p) updateConfig({ actsAlone: Boolean(p.actsAlone) });
+  for (const key of ['aloneApps', 'aloneTap', 'aloneScroll', 'aloneType']) if (key in p) updateConfig({ [key]: Boolean(p[key]) });
+  if (typeof p.litertModel === 'string') updateConfig({ litertModel: p.litertModel }); // (1.13.0) which downloaded model is on (LiteRtBrain.kt)
+  if (typeof p.duoProvider === 'string') updateConfig({ duoProvider: p.duoProvider });
+  if (typeof p.duoName === 'string') updateConfig({ duoName: p.duoName.slice(0, 40) });
+  if (typeof p.duoAbout === 'string') updateConfig({ duoAbout: p.duoAbout.slice(0, 200) });
+  // (1.13.0) «Platicar con otra IA» started from the app (Su mente)
+  if (p.duoStart && typeof p.duoStart === 'object') window.capriDuoStart?.(p.duoStart);
+  // (1.13.0) «Regresar como estaba» (Su mente): Android hands back the restore point
+  // (RestorePoints.kt) and it lands like any other setting of hers — her keys of today are
+  // kept, the point never held them
+  if (p.restorePoint && typeof p.restorePoint === 'object') {
+    const point = p.restorePoint;
+    if (point.memory && typeof point.memory === 'object') {
+      memory = { ...point.memory };
+      memoryRead = true;
+      memoryEarly = {};
+      send('memory:save', memory);
+    }
+    if (point.config && typeof point.config === 'object') updateConfig({ ...point.config, apiKeys: cfg.apiKeys });
+    refreshModels({ fresh: true }).catch(() => {});
+  }
+  if ('icon' in p) updateConfig({ icon: Boolean(p.icon), ...(p.icon && { visible: true }) });
+  // the app's own Vestuario screen (ClosetActivity): what you picked there, on her now
+  if (p.wardrobeLook && typeof p.wardrobeLook === 'object') { updateConfig({ look: { ...p.wardrobeLook, mane: 'default', mask: 'default' } }); closet?.apply(); }
+  // her voice and ears (the app's Settings › Talk to her; Ears.kt reads them from config.json each time)
+  for (const key of ['voiceFilter', 'voicePace']) if (typeof p[key] === 'string') updateConfig({ [key]: p[key] });
+  // her accent in each language (Ears.kt: the voice and the ears for it)
+  for (const [key, value] of Object.entries(p)) if (/^phoneVoice_[a-z]{2}$/.test(key) && typeof value === 'string' && value.length < 200) updateConfig({ [key]: value }); // (1.12.0)
+  for (const [key, value] of Object.entries(p)) if (/^voiceAccent_(es|en|fr|pt)$/.test(key) && /^[a-z]{2}-[A-Z]{2}$/.test(String(value))) updateConfig({ [key]: value });
+  if (typeof p.voicePitch === 'number') updateConfig({ voicePitch: Math.min(2, Math.max(0.5, p.voicePitch)) });
+  if (typeof p.voiceRate === 'number') updateConfig({ voiceRate: Math.min(2, Math.max(0.5, p.voiceRate)) });
+  if ('musicCard' in p) updateConfig({ musicCard: Boolean(p.musicCard) });
+  if ('shake' in p) updateConfig({ shake: Boolean(p.shake) }); // (1.12.0) shake.js
+  if (typeof p.snapDelay === 'number') updateConfig({ snapDelay: Math.min(10, Math.max(0, Math.round(p.snapDelay))) });
+  // (1.12.0) "no me deja cambiarlo a Spotify": with her on, these two from the app's Settings never got here (she kept
+  // YouTube; and the voice's precision you picked, the one before)
+  if (['youtube', 'spotify'].includes(p.musicApp)) updateConfig({ musicApp: p.musicApp });
+  if (typeof p.voiceNeuralModel === 'string' && /^[\w.-]{1,40}$/.test(p.voiceNeuralModel)) updateConfig({ voiceNeuralModel: p.voiceNeuralModel });
+  if ('speak' in p) updateConfig({ speak: Boolean(p.speak) }); // (1.10.0) her voice on or off (Ears.kt reads it)
+  // (1.12.0) «Olvidar claves» in the app: that service's saved keys gone (and not her AI anymore if it was)
+  if (typeof p.forgetKey === 'string' && cfg.apiKeys?.[p.forgetKey]) {
+    const apiKeys = { ...cfg.apiKeys };
+    delete apiKeys[p.forgetKey];
+    updateConfig({ apiKeys, ...(cfg.provider === p.forgetKey ? { provider: 'pollinations' } : {}) });
+  }
+  if ('voiceCloud' in p) updateConfig({ voiceCloud: Boolean(p.voiceCloud) }); // (1.12.0) her voice in the cloud (Fish) or local (CapriVoice.answerEngine)
+  if ('speakChat' in p) updateConfig({ speakChat: Boolean(p.speakChat) }); // (1.11.7) her chat answers out loud (chatvoice.js)
+  // (1.11.0) Capri Voice V8 (CapriVoice.kt, voicelines.js): her recorded phrases, what says her new answers,
+  // and her phrases' volume and pace
+  if ('voiceClips' in p) {
+    updateConfig({ voiceClips: Boolean(p.voiceClips) });
+    call('voice:packs').then((c) => emit('voice:packs', c)).catch(() => {});
+  }
+  if (['system', 'text', 'qwen-mobile'].includes(p.voiceEngine)) updateConfig({ voiceEngine: p.voiceEngine });
+  if (['automatic', 'light', 'fidelity', 'balanced', 'custom'].includes(p.voiceMode)) updateConfig({ voiceMode: p.voiceMode });
+  // (V8.5) her neural voice on the phone (CapriNeural.kt): SIGNATURE once, threads, idle unload, what if it can't
+  if ('voiceDsp' in p) updateConfig({ voiceDsp: Boolean(p.voiceDsp) });
+  if (typeof p.voiceThreads === 'number') updateConfig({ voiceThreads: Math.min(8, Math.max(0, Math.round(p.voiceThreads))) });
+  if (typeof p.voiceUnloadMin === 'number') updateConfig({ voiceUnloadMin: Math.min(30, Math.max(0.5, p.voiceUnloadMin)) });
+  if (['text', 'system'].includes(p.voiceFallback)) updateConfig({ voiceFallback: p.voiceFallback });
+  if (typeof p.voiceClipVolume === 'number') updateConfig({ voiceClipVolume: Math.min(1, Math.max(0, p.voiceClipVolume)) });
+  if (typeof p.voiceClipSpeed === 'number') updateConfig({ voiceClipSpeed: Math.min(1.25, Math.max(0.75, p.voiceClipSpeed)) });
+  if ('gameTips' in p) updateConfig({ gameTips: Boolean(p.gameTips) });
+  // the app (1.9.0): Ajustes › Rendimiento, and your birthday from the «Tú» tab ({ m, d }, or none)
+  if (['auto', 'lite', 'full'].includes(p.perfMode)) updateConfig({ perfMode: p.perfMode });
+  if ('birthday' in p) {
+    const b = p.birthday;
+    const m = Math.round(Number(b?.m));
+    const d = Math.round(Number(b?.d));
+    updateConfig({ birthday: m >= 1 && m <= 12 && d >= 1 && d <= 31 ? { m, d } : null });
+  }
+  if ('streaming' in p) window.dev?.stream?.set(Boolean(p.streaming));
+  if (p.musicStay) updateConfig({ musicStay: String(p.musicStay) });
+  if (('musicCard' in p || p.musicStay) && notes) notes.refreshMusic(); // shown or hidden now
+  if ('watchScreen' in p) sendCommand('watchScreen', { on: Boolean(p.watchScreen) });
+  if (p.look) sendCommand('look');
+  if (p.provider) {
+    const res = await window.host.useProvider({ provider: p.provider, key: p.key || undefined, url: p.url || undefined });
+    if (!res.ok) send('log', { level: 'W', text: `AI ${p.provider}: ${res.error}` });
+    // set from the app: her panel still asking for a key (from before) goes away
+    else if (window.dev?.guide?.waiting && window.dev?.panel?.chatInput?.type === 'password') window.dev.guide.answer(null);
+  }
+});
+
+// a newer version of her is out (CapriService, from the repo's releases): she says so
+const UPDATE_LINES = {
+  es: '¡Salió mi versión {v}! Toca mi notificación o abre la app para actualizarme.',
+  en: 'My version {v} is out! Tap my notification or open the app to update me.',
+  pt: 'Saiu minha versão {v}! Toque na minha notificação ou abra o app pra me atualizar.',
+  fr: 'Ma version {v} est sortie ! Touche ma notification ou ouvre l’appli pour me mettre à jour.',
+  ru: 'Вышла моя версия {v}! Нажми на моё уведомление или открой приложение, чтобы обновить меня.',
+  vi: 'Phiên bản {v} của mình đã ra! Chạm vào thông báo hoặc mở ứng dụng để cập nhật mình.',
+  ja: 'わたしのバージョン{v}が出たよ！通知をタップするかアプリを開いてアップデートしてね。',
+  de: 'Meine Version {v} ist da! Tipp auf meine Benachrichtigung oder öffne die App, um mich zu aktualisieren.',
+  it: 'È uscita la mia versione {v}! Tocca la mia notifica o apri l’app per aggiornarmi.',
+};
+on('capri:update', ({ version, notes: news } = {}) => {
+  const line = (UPDATE_LINES[resolveLang(cfg.lang)] || UPDATE_LINES.en).replace('{v}', version || '');
+  const firstNews = String(news || '').split('\n')[0].replace(/^• /, '');
+  window.dev?.panel?.say({ kind: 'done', face: 'laugh', line, quote: firstNews, hold: 9000 });
+  window.dev?.capri?.perform('hop');
+});
+
+// your notifications and your music, as cards she jumps on (notes.js)
+let notes = null;
+ready.then(() => {
+  notes = new Notes({ config: () => cfg, lang: () => resolveLang(cfg.lang) });
+  followTurns(() => resolveLang(cfg.lang)); // the phone turned: she turns too
+  listen({ toggleVisible, visible: () => cfg.visible !== false }); // "Capri, …" out loud (Ears.kt)
+  touch.ghost = Boolean(cfg.ghost);
+  touch.ghostCards = Boolean(cfg.ghostCards);
+  // once her page has built her: the phone's tunings (phone-tweaks.js)
+  const tuned = setInterval(() => {
+    if (!window.dev?.capri) return;
+    clearInterval(tuned);
+    tweak({ cfg: () => cfg, onConfig: (fn) => listeners.config.add(fn) });
+    iconMode({ cfg: () => cfg, onConfig: (fn) => listeners.config.add(fn), setConfig: updateConfig });
+    iconFaces({ cfg: () => cfg }); // (1.10.0) her icon, with more feelings
+    floatMode({ cfg: () => cfg, setConfig: updateConfig });
+    longMemory({ cfg: () => cfg, readMemory, saveMemory });
+    phoneCare({ cfg: () => cfg });
+    moods({ cfg: () => cfg });
+    window.dev.voicelines = voiceLines({ cfg: () => cfg, lang: () => resolveLang(cfg.lang) }); // (after moods: her phrase gets its face too)
+    closet = wardrobe({ cfg: () => cfg, setConfig: updateConfig, onToggle: () => setTimeout(blur, 0) });
+    window.dev.wardrobe = closet;
+    window.dev.notes = notes; // (her wardrobe sheet joins its cards as a ledge for her)
+    window.dev.poses = poses({ cfg: () => cfg, wardrobe: closet });
+    window.dev.wedding = wedding({ cfg: () => cfg, setConfig: updateConfig, wardrobe: closet });
+    reactions({ cfg: () => cfg }); // her reactions to your music, videos, games (react.js)
+    window.dev.hearing = hearing(); // she's listening: her sign while you talk to her
+    window.dev.agenda = agenda(); // your classes and your calendar: she says her reminder too (Agenda.kt)
+    window.dev.share = sharing(); // pictures, videos, documents and sounds shared with her from other apps (share.js)
+    window.dev.translate = translating(); // "tradúceme esto": your screen, in the language you want
+    window.dev.coach = coaching({ cfg: () => cfg }); // "dame un consejo": tips for your game
+    window.dev.stream = streaming({ cfg: () => cfg, setConfig: updateConfig }); // streaming mode: your live's comments
+    window.dev.birthday = birthday({ cfg: () => cfg, setConfig: updateConfig }); // your birthday: she asks, and celebrates it
+    // 1.10.0
+    keepAsking({ lang: () => resolveLang(cfg.lang) }); // her chat closed while she thinks: she answers anyway
+    chatLog(); // your chat history, kept on the phone (the app shows it)
+    shaking({ cfg: () => cfg, lang: () => resolveLang(cfg.lang) }); // (1.12.0) you shake the phone: she reacts
+    window.dev.chatVoice = chatVoice({ cfg: () => cfg, lang: () => resolveLang(cfg.lang) }); // (1.11.7) her chat answers out loud
+    window.dev.reading = reading(window.dev); // (1.12.0) the book you're reading: recaps without spoilers
+    chatAsks({ lang: () => resolveLang(cfg.lang) }); // games, history, a message by WhatsApp: done, not asked to her AI
+    laser({ lang: () => resolveLang(cfg.lang), cfg: () => cfg }); // an app uninstalled: her beam
+    window.dev.autoDress = autoDress({ cfg: () => cfg, setConfig: updateConfig, lang: () => resolveLang(cfg.lang) }); // she dresses herself
+    window.dev.checkIn = checkIn({ cfg: () => cfg, setConfig: updateConfig, lang: () => resolveLang(cfg.lang), readMemory, saveMemory }); // she asks how you are
+    typing({ cfg: () => cfg }); // you type: she lies on top of the keyboard (in a game: on her phone)
+    window.dev.twin = twins({ cfg: () => cfg, lang: () => resolveLang(cfg.lang) }); // two of her (two fingers pulled apart)
+    window.dev.saver = saver({ cfg: () => cfg, lang: () => resolveLang(cfg.lang), setConfig: updateConfig }); // battery saver
+    // 1.11.0
+    appChat({ lang: () => resolveLang(cfg.lang) }); // her chat inside the app (its Chat tab)
+    // (1.13.0) «Platicar con otra IA»: both sides talk through brainCall (hers is her own brain,
+    // the guest's is the one you picked); turns land in the app's chat (Duo.kt draws them
+    // there, the guest's in its own colour), and only she speaks out loud
+    let guestBrain = { provider: 'local', model: null };
+    window.capriDuo = createDuo({
+      personaCapri: () => window.dev?.chat?.persona?.() || '',
+      capriName: 'Capri',
+      askCapri: (messages) => brainCall(cfg.provider, messages),
+      askGuest: (messages) => brainCall(guestBrain.provider, messages, { model: guestBrain.model }),
+      turn: (t) => send('duo:turn', t),
+      state: (on) => send('duo:state', { on }),
+    });
+    window.capriDuoStart = (opts = {}) => {
+      guestBrain = { provider: String(opts.provider || cfg.duoProvider || 'local'), model: opts.model || null };
+      window.capriDuo.start({
+        name: String(opts.name ?? cfg.duoName ?? ''),
+        about: String(opts.about ?? cfg.duoAbout ?? ''),
+        userName: cfg.userName || '',
+      }).catch(() => {});
+      return true;
+    };
+    on('duo:say', (p) => window.capriDuo?.say(p?.text)); // you, jumping in from the app's chat
+    on('duo:stop', () => window.capriDuo?.stop());
+    // (1.13.0) orders of several steps (steps.js): her brain plans them, or the recogniser
+    // splits them; each step is answered by ControlService itself (doControlStep)
+    window.capriSteps = createSteps({
+      enabled: () => cfg.controlSteps !== false,
+      lang: () => resolveLang(cfg.lang),
+      plan: (text) => planSteps(text),
+      launch: async (name) => {
+        const item = await window.host.findLaunch(name);
+        if (!item) return false;
+        const res = await window.host.launch(item);
+        return Boolean(res?.ok);
+      },
+      doStep: (step) => doControlStep(step),
+      say: (line) => window.dev?.panel?.say({ kind: 'info', face: 'smug', line, hold: 6000 }),
+    });
+    // (1.13.0) «Ella actúa sola»: while its switch is on, her eyes stay open and her brain may
+    // do one thing at a time on its own — through the native alone-gate (Autonomy.kt), which
+    // keeps the hard limits and writes down everything she does
+    window.capriAutonomy = createAutonomy({
+      isOn: () => Boolean(cfg.actsAlone),
+      limits: () => ({ apps: cfg.aloneApps, tap: cfg.aloneTap, scroll: cfg.aloneScroll, type: cfg.aloneType }),
+      busy: () => Boolean(window.dev?.chat?.open || window.dev?.chat?.turn),
+      lookLive: (on) => call('look:live', { on }),
+      snap: async () => {
+        const r = await window.host.lookSnap();
+        return r?.ok && r.id !== 'blind' ? r.id : null;
+      },
+      decide: (imageId) => aloneDecide(imageId),
+      act: async (step) => {
+        if (step.what === 'launch') {
+          const item = await window.host.findLaunch(step.text);
+          if (!item) return { ok: false };
+          return call('alone:launch', item).then(() => ({ ok: true }), () => ({ ok: false }));
+        }
+        return call('alone:do', step).then((r) => ({ ok: Boolean(r?.ok) }), () => ({ ok: false }));
+      },
+      say: (line) => window.dev?.panel?.say({ kind: 'info', face: 'smug', line, hold: 5000 }),
+      off: () => updateConfig({ actsAlone: false }),
+      onLookStopped: (fn) => on('look:stopped', fn),
+    });
+    window.capriAutonomy.boot();
+    window.dev.sleep = sleepMode({ cfg: () => cfg, lang: () => resolveLang(cfg.lang) }); // she sleeps with you (Sleep.kt)
+    window.dev.reactMode = reactMode({ cfg: () => cfg, setConfig: updateConfig, lang: () => resolveLang(cfg.lang) }); // she watches your videos with you
+    window.dev.neuro = neuroDances({ cfg: () => cfg, setConfig: updateConfig, lang: () => resolveLang(cfg.lang) }); // braindances she records for you
+  }, 300);
+});
+
+// you stopped her live look (Android's cast mark): her setting goes off with it
+on('look:stopped', () => updateConfig({ watchScreen: false }));
+
+// the screen turned (or the keyboard took some of it): her window is another size
+// the keyboard up (Overlay.kt): her floor goes up above it, so she and her chat stay in sight
+// and nothing of hers sits over the keys
+let keyboard = 0;
+const tallest = {}; // her window's full height, per orientation (if the keyboard shrinks the window, that part is already gone)
+const resized = () => {
+  const key = innerWidth > innerHeight ? 'land' : 'port';
+  if (!keyboard) tallest[key] = innerHeight;
+  const shrunk = Math.max(0, (tallest[key] || innerHeight) - innerHeight);
+  const gap = Math.min(Math.max(0, keyboard - shrunk), innerHeight * 0.7);
+  emit('overlay:resize', { width: innerWidth, height: innerHeight, gap });
+  send('log', { level: 'I', text: `size ${innerWidth}x${innerHeight} (screen ${screen.width}x${screen.height}) keyboard ${keyboard} gap ${Math.round(gap)}` });
+};
+window.addEventListener('resize', resized);
+// (1.10.0) "no deja terminar de escribir porque se mueve": while you type, many keyboards change
+// height (their word suggestions coming and going: 448, 472, 448…) and some hide for an instant
+// (472, 0, 448). Each of those moved her chat. Now: a keyboard up only grows her floor (a smaller
+// change of it is let be), and one that goes away has to stay away a moment before she comes down.
+let keyboardGone = null;
+on('ime:change', ({ height = 0 } = {}) => {
+  const h = Math.max(0, Number(height) || 0);
+  clearTimeout(keyboardGone);
+  if (!h) {
+    if (!keyboard) return;
+    keyboardGone = setTimeout(() => { keyboard = 0; resized(); }, 400);
+    return;
+  }
+  if (keyboard && h < keyboard && keyboard - h <= 96) return; // (its suggestions bar went: she stays put)
+  if (h === keyboard) return;
+  keyboard = h;
+  resized();
+  const capri = window.dev?.capri;
+  // sitting on something now under the keys: she gets up onto what's left of the screen
+  if (keyboard && capri && capri.stance !== 'stand' && capri.pos.y > innerHeight - keyboard) {
+    capri.teleport({ x: capri.pos.x, y: innerHeight - keyboard }, { stance: 'stand' });
+  }
+});
+
+// Android short of memory, or the screen off (Overlay.kt trim): what she can fetch again goes
+window.__capriTrim = () => {
+  window.dev?.fx?.releaseIntro?.();
+};
+
+// she's up: Kotlin can show her (the WebView stays hidden until the page has drawn once)
+ready.then(() => setTimeout(() => send('overlay:ready'), 0));
+ready.then(watchGpu);
+// her heartbeat: Overlay.kt gives her a fresh page if it stops (frozen)
+ready.then(() => setInterval(() => send('overlay:alive'), 5000));
+
+// her page's errors, to the app's screen (MainActivity), so a phone with no developer tools can tell
+window.addEventListener('error', (e) => send('log', { level: 'E', text: `${e.message} (${String(e.filename).split('/').pop()}:${e.lineno})` }));
+window.addEventListener('unhandledrejection', (e) => send('log', { level: 'E', text: `unhandled: ${e.reason?.stack || e.reason}` }));

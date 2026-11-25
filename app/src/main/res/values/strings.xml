@@ -1,0 +1,910 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Capri</string>
+    <string name="channel_name">Capri on your screen</string>
+    <string name="channel_desc">Keeps Capri running and holds her menu.</string>
+    <string name="notify_title">Capri is online</string>
+    <string name="notify_text">On your screen. Tap here for my menu.</string>
+    <string name="notify_text_hidden">Put away in her biochip</string>
+    <string name="action_menu">Menu</string>
+    <string name="action_hide">Put away</string>
+    <string name="action_show">Bring back</string>
+    <string name="action_quit">Quit</string>
+    <string name="main_intro">Capri lives on top of your apps and tells you what Claude Code, Codex or Antigravity is doing (in Termux on this phone, or on your PC through Wi-Fi).</string>
+    <string name="main_start">Start Capri</string>
+    <string name="main_stop">Stop Capri</string>
+    <string name="main_ok">Done</string>
+    <string name="main_license_link">License</string>
+    <string name="hooks_copied">Command copied. Paste it in Termux and press Enter.</string>
+    <string name="tile_label" translatable="false">Capri</string>
+    <string name="main_overlay">Show over other apps</string>
+    <string name="main_notify">Show her notification</string>
+    <string name="main_running">She is on your screen. Long-press her for her menu.</string>
+    <string name="main_status_on">ONLINE</string>
+    <string name="main_status_off">OFFLINE</string>
+    <string name="main_idle">Grant the two permissions, then start her.</string>
+    <string name="main_granted">GRANTED</string>
+    <string name="main_grant">GRANT</string>
+    <string name="main_log">Log</string>
+    <string name="main_log_empty">Nothing yet. If she does not show up, what went wrong appears here.</string>
+    <string name="main_copy">Copy</string>
+    <string name="main_copied">Log copied</string>
+    <string name="main_ai">Her AI</string>
+    <string name="main_ai_pick">Choose her AI</string>
+    <string name="main_ai_free">Free online, no account</string>
+    <string name="main_ai_pc">Ollama on your PC</string>
+    <string name="main_ai_custom">Your own server</string>
+    <string name="main_ai_how">Opens her panel over your screen: free with no account, a key (Groq, Gemini and NVIDIA are free), or your PC\'s Ollama over Wi-Fi. No terminal.</string>
+    <string name="main_notes">See your notifications and music (optional): she jumps on them</string>
+    <string name="update_head">Updates</string>
+    <string name="update_checking">Looking for a new version…</string>
+    <string name="update_latest">Up to date · v%1$s</string>
+    <string name="update_offline">Couldn\'t check (offline?) · v%1$s</string>
+    <string name="update_new">New: v%1$s (you have v%2$s)</string>
+    <string name="update_go">Update</string>
+    <string name="update_downloading">Downloading… %1$d %%</string>
+    <string name="update_installing">Confirm it on the screen Android shows</string>
+    <string name="update_allow">Allow Capri to install apps, then come back and tap Update.</string>
+    <string name="update_failed">The update didn\'t work from here: its page opens so you can download it.</string>
+    <string name="update_conflict">This version was signed differently: uninstall Capri once and install it again. After that, updates install over.</string>
+    <string name="update_channel">Updates</string>
+    <string name="update_title">Capri %1$s is out</string>
+    <string name="update_text">Tap to update, no need to uninstall.</string>
+    <string name="ob_linking">Linking to her biochip…</string>
+    <string name="ob_hello">Hey, choom. I’m Capri. I’ll live on top of your apps, chat with you and tell you what your AI is up to. First, four quick things.</string>
+    <string name="ob_start">Start</string>
+    <string name="ob_name_line">What should I call you?</string>
+    <string name="ob_name_how">Your name or a nickname. I’ll use it now and then. You can change it later in Settings.</string>
+    <string name="ob_name_hint">Your name or nickname</string>
+    <string name="ob_next">Next</string>
+    <string name="ob_skip">Not now</string>
+    <string name="ob_back">Back</string>
+    <string name="ob_ai_line">To talk with you I need an AI, %1$s.</string>
+    <string name="ob_ai_how">Pick one. You can change it any time in Settings.</string>
+    <string name="ai_free_title">Free, no account</string>
+    <string name="ai_free_how">One tap and done. Goes through the internet (Pollinations).</string>
+    <string name="ai_key_title">With a key</string>
+    <string name="ai_key_how">Groq, Gemini and NVIDIA are free: open their page, make a key, copy it and paste it here.</string>
+    <string name="ai_pc_title">Your PC’s Ollama</string>
+    <string name="ai_pc_how">Your PC is her brain over Wi-Fi. In Ollama turn on “Expose Ollama to the network” and type the PC’s IP here.</string>
+    <string name="ai_key_hint">Paste your key (or several, separated by commas)</string>
+    <string name="ai_paste">Paste key</string>
+    <string name="ai_paste_none">Nothing copied.</string>
+    <string name="paste">Paste</string>
+    <string name="ai_get_key">Get a key</string>
+    <string name="ai_ip_hint">PC’s IP, e.g. 192.168.1.20</string>
+    <string name="ai_use">Use this one</string>
+    <string name="ai_checking">Checking…</string>
+    <string name="ai_ok">Done: %1$s answers her now.</string>
+    <string name="ai_bad_key">That key doesn’t work. Check you copied all of it.</string>
+    <string name="ai_fail">No answer (%1$s). Check the address or your connection.</string>
+    <string name="ob_perm_line">Now the permissions. I’ll tell you what each one is for.</string>
+    <string name="ob_perm_how">The needed ones come first. You can give the optional ones any time from the Permissions tab.</string>
+    <string name="perm_overlay_title">Show over other apps</string>
+    <string name="perm_overlay_why">It’s how I exist on your phone: without it I can’t show up over anything. Your taps still reach your apps; only I and my panels can be touched.</string>
+    <string name="perm_notify_title">Her notification</string>
+    <string name="perm_notify_why">Android needs a pinned notification so it doesn’t close me. It’s also my panel: Menu, Put away and Quit, and my winks.</string>
+    <string name="perm_notes_title">See your notifications</string>
+    <string name="perm_notes_why">So I can sit on your music with its controls and jump on your notices. I only see the app and the title, never the message, and nothing leaves the phone. Heads-up: with this on, some banking apps block you; if you use one, better leave it off.</string>
+    <string name="perm_install_title">Install her updates</string>
+    <string name="perm_install_why">So I can update myself from GitHub without uninstalling. Android still asks you to confirm each time.</string>
+    <string name="perm_required">NEEDED</string>
+    <string name="perm_optional">OPTIONAL</string>
+    <string name="ob_done_line">All set, %1$s. See you on top of your apps.</string>
+    <string name="ob_done_how">Long-press me for my menu, drag me to throw me, and pet me with two fingers.</string>
+    <string name="ob_need_overlay">First let her show over other apps.</string>
+    <string name="tab_news">What’s new</string>
+    <string name="tab_mind">Her mind</string>
+    <string name="mind_map_head">Her neurons</string>
+    <string name="mind_counts">Memories: %1$d · Conversations: %2$d</string>
+    <string name="mind_brain_head">Her neural brain</string>
+    <string name="mind_voice_neural">Neural voice: %1$s</string>
+    <string name="mind_brain_now">Chat brain: %1$s</string>
+    <string name="main_ai_local">On this phone (no internet)</string>
+    <string name="teach_title">Teach her a text</string>
+    <string name="teach_how">Pick a .txt or .md file from your phone: she keeps what it says as things she remembers (short lines, the size of her memories), and she can quote it when you talk — with her brain on this phone and with her AI.</string>
+    <string name="teach_pick">Pick a file</string>
+    <string name="teach_done">She learned %1$d new things from your file.</string>
+    <string name="teach_none">Nothing new in that file (or her memory is full: 60 things).</string>
+    <string name="teach_bad">She couldn’t read that file.</string>
+    <string name="tab_perms">Permissions</string>
+    <string name="tab_community">Community</string>
+    <string name="tab_settings">Settings</string>
+    <string name="news_head">New</string>
+    <string name="perms_intro">What Capri can do on your phone, and why she needs it.</string>
+    <string name="settings_name">What she calls you</string>
+    <string name="settings_name_saved">I’ll call you %1$s now.</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_ai">Her AI</string>
+    <string name="settings_ai_now">Now: %1$s</string>
+    <string name="settings_ai_panel">Pick in her panel</string>
+    <string name="settings_intro_again">Replay the welcome</string>
+    <string name="choom">choom</string>
+    <string name="update_browser">It downloads in your browser. When it\'s done, open it and tap Update: it installs over this one, nothing lost.</string>
+    <string name="perms_bank_head">Banking apps</string>
+    <string name="perms_bank">Some banking apps block you if another app shows on top or can see notifications, even if it reads nothing from them. I never read anything from your bank or send your data anywhere. If your bank complains: turn off “See your notifications” and put me away (“Put away”, in my notification) before opening it.</string>
+    <string name="dev_on">Developer mode: the log shows in Settings.</string>
+    <string name="dev_off">Developer mode off.</string>
+    <string name="perm_mic_title">Hear you say “Capri”</string>
+    <string name="perm_mic_why">Only if you turn on “Talk to her” in Settings, and only with the screen on. Your phone\'s own speech recognizer turns what you say into words; I only keep what comes after my name, and I never record audio. Android shows the microphone dot while I\'m listening. Heads-up: some banking apps and antivirus apps get wary of apps with the microphone; if yours complains, turn it off.</string>
+    <string name="settings_voice">Talk to her</string>
+    <string name="settings_voice_how">Say “Capri” and then what you want: “Capri, what time is it?”, “Capri, open Spotify”, “Capri, next song”, “Capri, turn on the flashlight”, “Capri, set a 10 minute timer”, “Capri, hide”. Anything else goes to her AI, and she answers out loud. Only with the screen on.</string>
+    <string name="settings_voice_on">On: she\'s listening for her name.</string>
+    <string name="settings_voice_off">Off.</string>
+    <string name="settings_voice_turn_on">Turn on</string>
+    <string name="settings_voice_turn_off">Turn off</string>
+    <string name="settings_voice_nomic">Without the microphone she can\'t hear you.</string>
+    <string name="settings_voice_none">This phone has no speech recognizer (install or update the Google app).</string>
+    <string name="voice_listening">● Listening. Say “Capri…”</string>
+    <string name="voice_heard">✓ Heard her name: “%1$s”</string>
+    <string name="voice_other">Heard “%1$s”, but not “Capri”.</string>
+    <string name="voice_busy">The microphone is busy (a call or another app).</string>
+    <string name="voice_media">Paused while a video or music plays: listening would pause it. Back on its own when it ends.</string>
+    <string name="voice_nomic">No microphone permission: give it in Permissions.</string>
+    <string name="voice_recmic">I have the microphone, but your phone\'s speech app doesn\'t. Give it microphone permission: Settings › Apps › Google (or Huawei\'s voice service).</string>
+    <string name="voice_screenoff">Resting: the screen is off.</string>
+    <string name="voice_norecognizer">This phone has no speech recognizer (install or update the Google app).</string>
+    <string name="voice_error">The speech recognizer failed (error %1$s). Trying again…</string>
+    <string name="voice_starting">Starting… (is Capri on?)</string>
+    <string name="tab_cmds">Commands</string>
+    <string name="cmds_intro">What you can ask her, out loud or typed in her chat.</string>
+    <string-array name="cmds">
+        <item>#Talk to her</item>
+        <item>Turn it on in Settings → Talk to her. Say “Capri” and what you want; if you only say “Capri”, she listens for a few seconds. All of this also works typed in her chat.</item>
+        <item>#Time and date</item>
+        <item>“Capri, what time is it?”</item>
+        <item>“Capri, what day is it?”</item>
+        <item>#Music</item>
+        <item>“Capri, play Bad Bunny on Spotify”</item>
+        <item>“Capri, play Never Fade Away on YouTube”</item>
+        <item>“Capri, pause” · “next” · “previous”</item>
+        <item>While something plays she doesn’t listen (it would pause it): use her music bar or type it in her chat.</item>
+        <item>“Capri, turn it up” · “turn it down”</item>
+        <item>“Capri, volume 30” · “mute”</item>
+        <item>#Apps</item>
+        <item>“Capri, open WhatsApp”</item>
+        <item>“Capri, open youtube.com”</item>
+        <item>#Your phone</item>
+        <item>“Capri, turn on the flashlight” · “turn off the flashlight”</item>
+        <item>“Capri, how much battery do I have?”</item>
+        <item>“Capri, how much free space is left?”</item>
+        <item>“Capri, open wifi settings” (or bluetooth, sound, display…)</item>
+        <item>#Time</item>
+        <item>“Capri, set a 10 minute timer”</item>
+        <item>“Capri, remind me to call mom in 1 hour”</item>
+        <item>“Capri, remind me tomorrow at 9 to take out the trash”</item>
+        <item>#Her</item>
+        <item>“Capri, hide” · “Capri, come back”</item>
+        <item>“Capri, gamer mode” (off in Settings or her menu)</item>
+        <item>“Capri, streaming mode” / “Capri, streaming mode off”</item>
+        <item>“Capri, translate this into English” (what’s on your screen)</item>
+        <item>“Capri, give me a tip” (for the game on your screen)</item>
+        <item>“Capri, icon mode” / “Capri, icon mode off”</item>
+        <item>“Capri, open the chat”</item>
+        <item>“Capri, call me Emma”</item>
+        <item>“Capri, remember that I like coffee”</item>
+        <item>“Capri, stop listening”</item>
+        <item>#Your screen</item>
+        <item>“Capri, look at my screen” (Android asks you first; it needs an AI that sees pictures, like Gemini)</item>
+        <item>Live: Settings → Let her see your screen → Watch live</item>
+        <item>#Your phone</item>
+        <item>“Capri, go back”, “go home”, “scroll down”</item>
+        <item>“Capri, tap Settings”, “type here hello”</item>
+        <item>Turn it on first: Customize → She uses your phone for you</item>
+        <item>“Capri, split” (or spread two fingers on her) · “come back together”</item>
+        <item>#Anything else</item>
+        <item>Anything else goes to her AI and she answers out loud: “Capri, tell me a joke”, “Capri, how do you say cat in Japanese?”</item>
+    </string-array>
+    <plurals name="news_changes">
+        <item quantity="one">%d change · tap to see it</item>
+        <item quantity="other">%d changes · tap to see them</item>
+    </plurals>
+    <string name="settings_her">Capri on your screen</string>
+    <string name="settings_size">Size</string>
+    <string name="size_xs">Mini</string>
+    <string name="size_s">Small</string>
+    <string name="size_m">Normal</string>
+    <string name="size_l">Large</string>
+    <string name="size_xl">Huge</string>
+    <string name="community_title">Join the community</string>
+    <string name="community_how">Capri news before anyone else, ideas, bugs, and people who have her on their phone too. Come to the Discord and follow me on TikTok.</string>
+    <string name="community_discord">Join the Discord</string>
+    <string name="community_tiktok">Follow on TikTok</string>
+    <string name="community_later">Not now</string>
+    <string name="settings_lang">Idioma · Language</string>
+    <string name="lang_auto">Automatic</string>
+    <string name="settings_float">No gravity</string>
+    <string name="settings_float_how">She stays exactly where you put her, even in the air: let go of her and she floats there. She doesn’t wander off or jump onto your notifications, and flinging her doesn’t throw her around, so she never gets mad about it. Put her in a corner or next to your chats and she stays.</string>
+    <string name="settings_icon">Icon mode</string>
+    <string name="settings_icon_how">Only her green mask stays on screen, with her eyes open, and she keeps commenting from there (your screen, your games, her chat). Drag it with a finger wherever it bothers you least; tap it for her menu. Handy if you like her big: when she’s out she’s big, as an icon she takes almost nothing.</string>
+    <string name="settings_gamer">Gamer mode</string>
+    <string name="settings_gamer_how">For when you play: she sits small and half see-through in a corner to watch you play (how see-through: her Wardrobe › Effects), only her face takes touches, her cards stay away, she stops listening, and now and then she cheers you on. Also in her menu or by saying “Capri, gamer mode”. Off when you tap it again or restart her.</string>
+    <string name="settings_gamer_auto">On its own when a game opens</string>
+    <string name="settings_gamer_auto_how">It turns on when you open a game and off when you leave. It needs “Usage access” in Android’s settings (she only sees which app is open, nothing inside it). Heads up: some banking and antivirus apps distrust that permission; if yours complains, leave this off.</string>
+    <string name="settings_gamer_auto_grant">Find Capri in the list and turn on “Permit usage access”.</string>
+    <string name="voice_gamer">Paused: gamer mode.</string>
+    <string name="settings_music">Music bar</string>
+    <string name="music_always">Always</string>
+    <string name="music_while">A while</string>
+    <string name="music_off">Never</string>
+    <string name="settings_lively">Movement</string>
+    <string name="lively_calm">Calm</string>
+    <string name="lively_normal">Normal</string>
+    <string name="lively_restless">Restless</string>
+    <string name="settings_ghost">Ghost mode</string>
+    <string name="settings_ghost_how">She stays on your screen but your touches go through her to your apps. Her face still takes touches: drag her by it, or hold it for her menu.</string>
+    <string name="on">On</string>
+    <string name="off">Off</string>
+    <string name="settings_look">Let her see your screen</string>
+    <string name="settings_look_how">“Capri, look at my screen” (or the button) lets her look once and comment. Live, she looks now and then and when you switch apps, until you turn it off. Android asks you each time it starts and shows its recording notice while she can see. The picture only goes to her chat\'s AI; banking apps come out black. It needs an AI that sees pictures, like Gemini (its key is free): Capri\'s free AI can\'t see.</string>
+    <string name="settings_look_now">Look at my screen now</string>
+    <string name="settings_look_live_on">Watch live</string>
+    <string name="settings_look_live_off">Stop watching live</string>
+    <string name="settings_need_on">Start Capri first (in Her mind).</string>
+    <string name="settings_memory">What she remembers about you</string>
+    <string name="settings_memory_how">After a chat, Capri notes down what matters (what you like, the people you talk about, what’s going on with you) so she remembers it next time. It stays only on this phone; to note it down she asks her AI once per chat.</string>
+    <string name="settings_memory_none">She doesn’t remember anything yet. Chat with her for a while.</string>
+    <string name="settings_memory_forget">Forget everything</string>
+    <string name="settings_memory_forget_one">Forget this</string>
+    <string name="settings_memory_forgot">Forgotten.</string>
+    <string name="ai_key_saved_hint">Leave it empty to keep your keys, or paste another to add it</string>
+    <string name="settings_intro_again_how">This only replays her welcome. Your AI, your key and her settings stay as they are; on the AI step, just tap Next.</string>
+    <string name="settings_intro_again_go">Replay</string>
+    <string name="settings_care">She looks after you</string>
+    <string name="settings_battery">Battery alerts</string>
+    <string name="settings_battery_how">She tells you when your phone is charged to the percent you choose, and when it’s running low. Android tells her the battery; no permission needed.</string>
+    <string name="settings_battery_full">Tell me when it charges to</string>
+    <string name="settings_battery_low">Tell me when it drops to</string>
+    <string name="settings_breaks">Breaks</string>
+    <string name="settings_breaks_how">After this long on your phone without putting it down, she tells you to rest your eyes. Turning the screen off five minutes counts as a break.</string>
+    <string name="ai_sees">👁 = can look at your screen. They can: Gemini, OpenAI, Groq, OpenRouter, Mistral and NVIDIA (she picks one of their models that sees). They can’t: DeepSeek and the free AI. With Ollama, only vision models (llava, gemma3, qwen-vl).</string>
+    <string name="voice_filter">Noise filter</string>
+    <string name="voice_filter_how">With people or a TV around, she can think she heard her name. Stricter: she only answers when “Capri” is the first thing you say, and said clearly. Stricter also ignores what she hears while the phone is moving in your hand.</string>
+    <string name="voice_filter_normal">Normal</string>
+    <string name="voice_filter_strict">Strict</string>
+    <string name="voice_filter_strictest">Very strict</string>
+    <string name="voice_pace">How you talk</string>
+    <string name="voice_pace_fast">Fast</string>
+    <string name="voice_pace_normal">Normal</string>
+    <string name="voice_pace_slow">Slow</string>
+    <string name="voice_pitch">Her voice</string>
+    <string name="voice_low">Lower</string>
+    <string name="voice_high">Higher</string>
+    <string name="voice_rate">How fast she talks</string>
+    <string name="voice_slower">Slower</string>
+    <string name="voice_faster">Faster</string>
+    <!-- 1.8.0: her wardrobe, shown off in Settings -->
+    <string name="closet_tag">Wardrobe</string>
+    <string name="closet_new">NEW IN 1.8</string>
+    <string name="closet_title">Dress her your way</string>
+    <string name="closet_outfits">outfits</string>
+    <string name="closet_things">accessories</string>
+    <string name="closet_anims">animations</string>
+    <string name="closet_how">Everyday outfits and Cyberpunk: Edgerunners ones (David, Lucy, Rebecca, Kiwi, Talia…), accessories, auras and the Sandevistan, and how see-through she is. While you dress her she climbs on top of the panel, so you see every change on her.</string>
+    <string name="closet_alive">And now she moves frame by frame, like in the anime: she dances, sleeps curled up, watches you play, listens to your music with you, gets dizzy if you throw her…</string>
+    <string name="closet_where">Open it any time: hold her and tap “Dress her”, or say “Capri, get dressed”.</string>
+    <string name="closet_open">Open her wardrobe</string>
+    <string name="closet_on_screen">Dress her on your screen</string>
+    <string name="share_target">Show to Capri</string>
+    <string name="share_sending">Sending it to Capri…</string>
+    <string name="share_failed">Capri couldn’t open that</string>
+    <string name="voice_accent">Her accent</string>
+    <string name="voice_accent_how">How she sounds in this language, as people talk in each place (it also helps her understand you). If your phone has no voice for one, she uses its usual one for the language; Google’s voice engine has most of them.</string>
+    <string name="accent_mx">Mexico</string>
+    <string name="accent_es">Spain</string>
+    <string name="accent_ar">Argentina</string>
+    <string name="accent_co">Colombia</string>
+    <string name="accent_us_latino">US Latino</string>
+    <string name="accent_us">American</string>
+    <string name="accent_gb">British</string>
+    <string name="accent_au">Australian</string>
+    <string name="accent_in">Indian</string>
+    <string name="accent_br">Brazil</string>
+    <string name="accent_pt">Portugal</string>
+    <string name="accent_fr">France</string>
+    <string name="accent_ca">Québec</string>
+    <string name="settings_game_tips">Tips while you play</string>
+    <string name="settings_game_tips_how">In gamer mode, with her live look on (she’s watching your screen), every few minutes she gives you a tip for the game you’re playing. You can also ask her any time: “Capri, give me a tip”, “what do I do here?”. Her AI has to see pictures.</string>
+    <string name="settings_streaming">Streaming mode</string>
+    <string name="settings_streaming_how">For when you’re live (TikTok, Twitch, YouTube, Kick…): she reads your viewers’ comments off your screen and answers them out loud, as your co-host. No login and no connection to those apps: she only sees your screen (Android asks you to share it). Her AI has to see pictures. Also “Capri, streaming mode”. Off when you tap it again or restart her.</string>
+    <string name="settings_streaming_start">Start Capri first.</string>
+    <string name="voice_moved">Heard “%1$s” while the phone was moving: ignored (its rustle, not you).</string>
+    <string name="settings_perf">Performance</string>
+    <string name="settings_perf_how">Light mode draws her with fewer pixels and leaves out the blur behind her menus: she runs smoother on older phones and uses less battery. Automatic turns it on for phones with little memory or an old Android.</string>
+    <string name="settings_perf_now">This phone: %1$s</string>
+    <string name="perf_auto">Automatic</string>
+    <string name="perf_lite">Light</string>
+    <string name="perf_full">Full</string>
+    <string name="perf_is_lite">light mode</string>
+    <string name="perf_is_full">full mode</string>
+    <string name="webview_old_title">Update “Android System WebView”</string>
+    <string name="webview_old_how">Capri is drawn by Android System WebView, and the one on this phone (version %1$d) is too old for her: she may not show up or may freeze. Update it from the Play Store (it’s free and safe, it’s part of Android) and start her again.</string>
+    <string name="webview_update">Update WebView</string>
+    <string name="voice_far">Heard something far away (the TV, someone else): ignored it.</string>
+    <string name="tab_you">You</string>
+    <string name="tab_style">Customize</string>
+    <string name="you_intro">What Capri knows about you: what she calls you, your birthday, what she remembers and how she looks after you.</string>
+    <string name="style_intro">How your Capri looks, behaves and sounds.</string>
+    <string name="settings_intro">What’s general: her permissions, the language, her AI, her ears, her modes and how the app runs.</string>
+    <string name="settings_modes">Her modes</string>
+    <string name="settings_her_voice">Her voice</string>
+    <string name="you_birthday">Your birthday</string>
+    <string name="you_birthday_how">On that day she celebrates you: confetti, she wishes you a happy birthday out loud and throws her party. She can also ask you about it in her chat.</string>
+    <string name="you_birthday_none">Not set yet</string>
+    <string name="you_birthday_pick">Choose the date</string>
+    <string name="you_birthday_clear">Remove</string>
+    <string name="settings_stats">Anonymous statistics</string>
+    <string name="settings_stats_how">Once a day the app sends a random number made up the first time (not your phone’s or your account’s), the app’s version, its language and the Android version, so Emma knows how many people use Capri. Nothing else: no name, no chats, nothing from your phone.</string>
+    <string name="settings_ghost_cards">Her cards too</string>
+    <string name="settings_ghost_cards_how">With ghost mode on, your touches also go through her notification and music cards. Off: only she lets them through, and her cards can still be touched.</string>
+    <string name="peek_title">She peeks into your notifications</string>
+    <string name="peek_how">When you pull down your notification panel or quick settings, Capri peeks in from the side and waves. Android only lets an app above that panel through Accessibility, so it’s turned on there: Accessibility › Capri. She reads nothing there and touches nothing: she’s only told that the panel opened. Some banking apps refuse to open while any app has Accessibility on. If Android says it’s a restricted setting: App info › ⋮ › Allow restricted settings.</string>
+    <string name="peek_on">● On</string>
+    <string name="peek_off">Off</string>
+    <string name="peek_turn_on">Turn on in Accessibility</string>
+    <string name="peek_turn_off">Turn off in Accessibility</string>
+    <string name="peek_service_label">Capri in your notifications</string>
+    <string name="peek_service_desc">Capri peeks into your notification panel and quick settings when you pull them down. This only tells the app that Android’s panel opened: it doesn’t read what’s on your screen, doesn’t touch anything and doesn’t watch other apps.</string>
+    <string name="peek_service_summary">Capri peeks in when you pull down the notification panel</string>
+    <string name="perms_summary">%1$d of %2$d allowed</string>
+    <string name="perms_show">See permissions</string>
+    <string name="perms_hide">Hide permissions</string>
+    <string name="widget_label">Capri</string>
+    <string name="widget_desc">Capri’s quick things: start her, talk, look at your screen, dress her</string>
+    <string name="widget_off">○ OFF</string>
+    <string name="widget_on">● ONLINE</string>
+    <string name="widget_hidden">● PUT AWAY</string>
+    <string name="widget_start">START</string>
+    <string name="widget_talk">TALK</string>
+    <string name="widget_look">LOOK</string>
+    <string name="widget_dress">DRESS</string>
+    <string name="widget_hide">HIDE</string>
+    <string name="widget_show">SHOW</string>
+    <string name="widget_app">APP</string>
+    <!-- 1.9.0: your classes and your calendar (Agenda.kt) -->
+    <string name="you_classes">Your classes</string>
+    <string name="you_classes_how">Tell me which days you have class and at what time: an hour before, my special notification reaches you. It all stays on your phone.</string>
+    <string name="you_classes_none">No classes noted yet.</string>
+    <string name="you_class_add">Add class</string>
+    <string name="you_class_name">Subject (optional)</string>
+    <string name="you_class_days">Which days?</string>
+    <string name="you_class_time">What time does it start?</string>
+    <string name="you_calendar">Your calendar</string>
+    <string name="you_calendar_how">If you want, I read your calendar to remind you of what’s coming: the evening before and an hour before. I only read it, I never change anything, and nothing leaves your phone.</string>
+    <string name="you_calendar_denied">Without the calendar permission I can’t see it. You can grant it in Android’s settings.</string>
+    <string name="agenda_channel">Classes and dates</string>
+    <string name="agenda_channel_how">Capri reminds you of your classes and what’s coming in your calendar.</string>
+    <string name="agenda_class_default">Your class</string>
+    <string name="agenda_event_default">(untitled)</string>
+    <string name="agenda_class_title">📚 Class day, %1$s!</string>
+    <string name="agenda_class_text">%1$s at %2$s. Grab your stuff, eat something and don’t be late. I’ll save you a seat.</string>
+    <string name="agenda_tomorrow_title">📅 Tomorrow: %1$s</string>
+    <string name="agenda_tomorrow_text">At %1$s. I’ll remember it for you, but you too, okay?</string>
+    <string name="agenda_tomorrow_allday">It’s all day. Get ready from today.</string>
+    <string name="agenda_today_title">📅 Today: %1$s</string>
+    <string name="agenda_today_text">Today’s the day, choom. Make it count.</string>
+    <string name="agenda_soon_title">⏰ At %1$s: %2$s</string>
+    <string name="agenda_soon_text">Almost time, choom. I’m telling you early so you don’t have to run.</string>
+    <!-- 1.9.0: report a bug (Report.kt) -->
+    <string name="settings_report">Report a bug</string>
+    <string name="settings_report_how">Tell us what happened and it reaches Emma on Discord. Along with it go the app’s version, your Android and phone model, and Capri’s internal error log, without your name, your messages or your keys.</string>
+    <string name="settings_report_hint">What happened? What were you doing?</string>
+    <string name="settings_report_send">Send</string>
+    <string name="report_empty">Tell us a bit more about what happened.</string>
+    <string name="report_sending">Sending…</string>
+    <string name="report_ok">Sent. Thank you, choom: Emma will look at it.</string>
+    <string name="report_rate">You’ve sent several already. Try again in an hour.</string>
+    <string name="report_off">Reports aren’t being received right now. Try again later.</string>
+    <string name="report_net">No connection. Check your internet and try again.</string>
+    <string name="report_bad">It couldn’t be sent. Try again later.</string>
+    <!-- 1.10.0 -->
+    <string name="you_games_title">Play with her</string>
+    <string name="you_games_open">Play</string>
+    <string name="you_chatlog_title">Chat history</string>
+    <string name="you_chatlog_how">Everything you told her in her chat and what she answered, by day, with a search. It stays on this phone only.</string>
+    <string name="you_chatlog_open">See history</string>
+    <string name="settings_saver">Battery saver</string>
+    <string name="settings_saver_how">When the battery drops to this level (and isn’t charging), what uses the most battery rests until you charge: her ears, her live look at your screen, her animations and reactions, and she’s drawn less often.</string>
+    <string name="settings_autodress">She dresses herself</string>
+    <string name="settings_autodress_how">Now and then she picks another of her outfits and shows it off. Each one lasts a good while, never every few minutes. Her colors never change.</string>
+    <string name="autodress_day">1 day</string>
+    <string name="voice_speak">Her voice</string>
+    <string name="voice_speak_how">Off: she still listens and answers, but only in writing.</string>
+    <string name="voice_speak_chat">Read her chat answers out loud</string>
+    <string name="voice_speak_chat_how">What she answers you in her chat (her bubble and the Chat tab) is also said out loud, not only when you talk to her. Long answers: their first sentences.</string>
+    <string name="settings_musicapp">Songs you ask for</string>
+    <string name="settings_musicapp_how">When you ask her for a song, it plays here (Spotify only if it’s installed; if not, it opens on the web).</string>
+    <string name="control_title">She uses your phone for you</string>
+    <string name="control_how">Ask her “Capri, go back”, “go home”, “open notifications”, “scroll down”, “tap Settings” or “type here hello”, out loud or in her chat. Android only allows this through Accessibility, so you turn it on there: Accessibility › Capri uses your phone. She only acts when you ask, reads the screen only at that moment to find what you named, and keeps nothing. She never acts inside banking or payment apps, never types into passwords and does nothing on the lock screen. Bonus: with this on, Android’s accessibility button (or its floating button) makes her appear out of nowhere over any app, even videos or games, and hides her again.</string>
+    <string name="control_bank">Heads up: some banking apps (like Nu) refuse to open while any app has Accessibility on. If yours complains, turn this off before opening it.</string>
+    <string name="control_service_label">Capri uses your phone</string>
+    <string name="control_service_desc">Lets Capri do what you ask her, only when you ask: go back, go home, open notifications or recent apps, scroll, tap a button by its name or type into the field you’re on. She reads the app in front only at that moment, to find what you named, and keeps nothing. She never acts in banking or payment apps, never types into passwords and does nothing on the lock screen.</string>
+    <string name="control_service_summary">Capri goes back, scrolls, taps and types when you ask her</string>
+    <string name="support_title">Want to support Capri?</string>
+    <string name="support_text">Capri is free, with no ads and no account, and I make her on my own. If you like her and can, a donation on PayPal helps me keep improving her. If not, no worries: she stays exactly the same.</string>
+    <string name="support_paypal">Support on PayPal</string>
+    <string name="support_never">Don\'t show again</string>
+    <!-- 1.11.0: her chat as the center, the games' tab, DONAR -->
+    <string name="tab_chat">Chat</string>
+    <string name="tab_games">Games</string>
+    <string name="chat_hint">Write to her…</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_help">What can I ask her?</string>
+    <string name="chat_hello">Hey, %1$s. This is our chat now: write me whatever you want.</string>
+    <string name="chat_you">choom</string>
+    <string name="chat_typing">Writing…</string>
+    <string name="chat_online">Online</string>
+    <string name="chat_asleep">Asleep · write to wake her</string>
+    <string name="chat_waking">(waking up… give me a few seconds)</string>
+    <string name="chat_noreply">My connection dropped. Try again in a moment?</string>
+    <string name="chat_voice_prep">🔊 Getting her voice ready…</string>
+    <string name="chat_voice_gen">🔊 Making her voice %1$d%%</string>
+    <string name="chat_voice_talk">🔊 Speaking</string>
+    <string name="chat_voice_talk_pct">🔊 Speaking · %1$d%%</string>
+    <string name="main_donate">Donate</string>
+    <string name="games_open">Open the arcade</string>
+    <string name="games_new">NEW</string>
+    <string name="games_hide_title">Floating Capri while you play</string>
+    <string name="games_hide_how">While you play here, her floating self over your screen can step aside so it doesn’t cover the game. She still watches from the corner of the game.</string>
+    <string name="games_hide_on">Hide her</string>
+    <string name="games_hide_off">Leave her</string>
+    <string name="you_games_how">Chess, minesweeper, 21, tic-tac-toe, ping pong, rock-paper-scissors, Connect 4, memory and the neural sequence, here on your phone with no internet. She plays against you and says what she thinks. You can also tell her “Capri, let’s play”.</string>
+    <string-array name="game_names">
+        <item>Chess</item>
+        <item>Minesweeper</item>
+        <item>21</item>
+        <item>Tic-tac-toe</item>
+        <item>Ping pong</item>
+        <item>Rock paper scissors</item>
+        <item>Connect 4</item>
+        <item>Memory</item>
+        <item>Neural sequence</item>
+        <item>Reflexes</item>
+        <item>Guess the number</item>
+        <item>Higher or lower</item>
+    </string-array>
+    <!-- 1.11.0: Huawei / Honor -->
+    <string name="huawei_title">Your Huawei / Honor</string>
+    <string name="huawei_how">These phones close apps in the background and some don’t have Google’s services. Three steps so Capri works fully:</string>
+    <string name="huawei_background">Let her run in the background</string>
+    <string name="huawei_background_how">In “App launch”, find Capri, switch off “Manage automatically” and switch on the three options (auto-launch, secondary launch, run in background).</string>
+    <string name="huawei_battery">No battery restriction for Capri</string>
+    <string name="huawei_voice">Her voice: install a voice</string>
+    <string name="huawei_voice_how">If she doesn’t talk out loud, pick or install a text-to-speech engine with your language there. To hear you, the phone needs a speech recognizer (Google’s app or a Huawei one); without it, write to her in her chat.</string>
+    <string name="settings_voice_none_huawei">This Huawei has no speech recognizer for apps. Write to her in her chat, or install one (Ajustes › Your Huawei explains how).</string>
+    <!-- 1.11.0: her pill (Android 16 live updates, Samsung Now Bar) -->
+    <string name="live_chat">Chat</string>
+    <string name="live_title">Her pill in the status bar</string>
+    <string name="live_how">On Android 16 and up, Capri can live in a pill next to the clock (with her mood) and, on Samsung, in the Now Bar of your lock screen, with buttons to chat with her, open her menu or hide her. It depends on your phone: if it doesn’t show, allow “live updates” for Capri.</string>
+    <string name="live_on">On</string>
+    <string name="live_off">Off</string>
+    <string name="live_allow">Allow it in Android</string>
+    <!-- 1.11.0: sleep mode (Sleep.kt) -->
+    <string name="sleep_channel">Capri’s alarm</string>
+    <string name="sleep_ring_title">Capri: time to get up!</string>
+    <string name="sleep_ring_text">Wake up, choom! Turn off the alarm.</string>
+    <string name="sleep_ring_text_name">Wake up, %1$s! Turn off the alarm.</string>
+    <string name="sleep_off">Turn off</string>
+    <string name="sleep_snooze">5 more minutes</string>
+    <string name="sleep_summary">You slept %1$d h %2$d min.</string>
+    <string name="sleep_summary_none">You didn’t turn on the screen all night. Proud of you.</string>
+    <string name="sleep_title">Sleep mode</string>
+    <string name="sleep_how">Capri sleeps with you: she curls up on your screen, counts how many times you turn it on during the night and, if you want, wakes you up with her alarm (and doesn’t stop until you turn it off). Your nights stay on this phone only.</string>
+    <string name="sleep_alarm_none">No alarm</string>
+    <string name="sleep_alarm_at">Alarm: %1$s</string>
+    <string name="sleep_go">Sleep with Capri</string>
+    <string name="sleep_woke">I’m awake</string>
+    <string name="sleep_now">Sleeping since %1$s · screen turned on %2$d times</string>
+    <string name="sleep_last">Last night:</string>
+    <string name="sleep_exact_btn">Let her ring on the dot</string>
+    <plurals name="sleep_summary_times">
+        <item quantity="one">You turned on the screen %1$d time (%2$d min awake).</item>
+        <item quantity="other">You turned on the screen %1$d times (%2$d min awake).</item>
+    </plurals>
+    <!-- 1.11.0 neurodanzas (Neuro.kt) -->
+    <string name="neuro_title">Neurodances</string>
+    <string name="neuro_how">Braindances: her memories, recorded for you. Give her a lot of love (pet her, talk to her) and every so often she records one for you to watch. Then she tells you what she thinks. You can also ask her: “Capri, give me a braindance”.</string>
+    <string name="neuro_open">Watch her braindances</string>
+    <string name="neuro_none">None yet. Give her some love.</string>
+    <string name="neuro_channel">Capri’s braindances</string>
+    <string name="neuro_notify_title">Capri recorded a braindance for you</string>
+    <string name="neuro_notify_text">“%1$s”. Tap to watch it.</string>
+    <plurals name="neuro_new">
+        <item quantity="one">%d new braindance, unwatched</item>
+        <item quantity="other">%d new braindances, unwatched</item>
+    </plurals>
+    <plurals name="neuro_count">
+        <item quantity="one">%d braindance kept</item>
+        <item quantity="other">%d braindances kept</item>
+    </plurals>
+    <!-- (1.11.0) Capri Voice V8 -->
+    <string name="cv_title">Capri Voice (her recorded voice)</string>
+    <string name="cv_how">Her own voice, phrase by phrase, offline and without loading any model: hellos, goodbyes, pats, good night. Optional packs, one per language.</string>
+    <string name="cv_clips">Phrases in her voice</string>
+    <string name="cv_answers">Her new answers</string>
+    <string name="cv_answers_how">Her AI\'s answers (Gemini, Grok…) are always said exactly as written: in her voice when one of her engines is installed (Automatic), in the phone\'s voice or in writing only.</string>
+    <string name="cv_engine_system">Phone\'s voice</string>
+    <string name="cv_engine_text">Text only</string>
+    <string name="cv_mode">Performance</string>
+    <string name="cv_mode_how">Automatic: her phrases, and her voice for new answers when an engine of hers is installed (else the phone\'s). Light: never loads a model. Maximum fidelity: only her voice, else in writing.</string>
+    <string name="cv_mode_fidelity">Max fidelity</string>
+    <string name="cv_mode_balanced">Balanced</string>
+    <string name="cv_mode_custom">Custom</string>
+    <string name="cv_volume">Her phrases\' volume</string>
+    <string name="cv_speed">Her phrases\' pace</string>
+    <string name="cv_vol_low">Low</string>
+    <string name="cv_vol_mid">Medium</string>
+    <string name="cv_vol_high">High</string>
+    <string name="cv_signature">SIGNATURE V7.2 finish: already inside her Spanish phrases (never applied twice). English goes without it, as approved.</string>
+    <string name="cv_engine_state">Engines: her phrases (no model) · her voice for new answers (her engines) · phone\'s voice · text only</string>
+    <string name="cv_test">Hear her voice</string>
+    <string name="cv_lang_es">Latin American Spanish</string>
+    <string name="cv_lang_en">English</string>
+    <string name="cv_installed">%1$s · v%2$s · %3$d phrases</string>
+    <string name="cv_missing">%1$s · not installed</string>
+    <string name="cv_install">Install from file</string>
+    <string name="cv_download">Download</string>
+    <string name="cv_repair">Repair</string>
+    <string name="cv_remove">Remove</string>
+    <string name="cv_verify">Check</string>
+    <string name="cv_storage">Takes %s on the phone</string>
+    <string name="cv_private">Her packs come from Capri\'s public channel on GitHub, checked byte by byte before anything is unpacked. You can also install one from a file.</string>
+    <string name="cv_nochannel">Couldn\'t reach Capri\'s voice channel.</string>
+    <string name="cv_ok">Done.</string>
+    <string name="cv_err">Couldn\'t: %s</string>
+    <string name="cv_err_notv8">That file isn\'t a verified Capri Voice V8 pack.</string>
+    <string name="cv_err_needfile">The original pack is missing: install it again from its file.</string>
+    <string name="cv_wait">Another download is still going. Wait for it to finish, then tap again.</string>
+    <string name="cv_wait_pct">Another download is still going (%1$d%%). Wait for it to finish, then tap again.</string>
+    <string name="cv_busy">Working…</string>
+    <string name="cv_no_phrase">No phrase of hers in this language yet: install its pack.</string>
+    <string name="cv_mode_auto">Automatic</string>
+    <string name="cv_mode_light">Light</string>
+    <string name="cv_why_auto">Automatic/Balanced: her phrases for her moments; new answers in her voice when one of her engines is installed and there\'s memory for it, else in the phone\'s voice.</string>
+    <string name="cv_why_light">Light: no model is ever loaded. Her phrases (no model) and the phone\'s voice.</string>
+    <string name="cv_why_fidelity">Maximum fidelity: only her voice. New answers in her voice with one of her engines, otherwise in writing.</string>
+    <string name="cv_why_custom">Custom: you choose the engine below.</string>
+    <string name="cv_why_custom_neural">Custom: her voice for new answers, with the engine you chose.</string>
+    <string name="cv_neural_now">Neural voice here: %s</string>
+    <string name="cv_engine_neural">Her voice</string>
+    <string name="cv_ab">Compare voices (A/B)</string>
+    <string name="cv_ab_how">The same new sentence in two engines, one after the other. Nothing is downloaded to compare. Her recorded phrases can\'t say new sentences: A/B plays one of her greetings instead.</string>
+    <string name="cv_src_clip">Phrase V8</string>
+    <string name="cv_ab_play">Hear %s</string>
+    <string name="cv_ab_stop">Stop</string>
+    <string name="cv_ab_pick">Keep %s</string>
+    <string name="cv_ab_sentence">Hey, choom! I found three ways to solve that problem.</string>
+    <string name="cv_ab_clip_note">Recorded phrase: %s</string>
+    <string name="cv_ab_clip_kept">Her phrases stay on for her moments.</string>
+    <string name="cv_ab_r_clip">Phrase V8 · %1$s · approved voice · no model · %2$s</string>
+    <string name="cv_ab_r_system">Phone\'s voice · %s · system voice, not Capri\'s</string>
+    <string name="cv_ab_r_neural">Her voice (Qwen 0.6B, ICL) · %1$s · %2$s</string>
+    <string name="cv_advanced">Advanced: her engines</string>
+    <string name="cv_neural_title">Qwen3-TTS 0.6B on the phone</string>
+    <string name="cv_neural_how">Her approved voice profile in ICL mode, the same as on PC. It loads on her first answer and unloads when idle or short of memory. A model file or her profiles can also be installed from your files.</string>
+    <string name="cv_neural_download">Download model</string>
+    <string name="cv_neural_import">Model from file</string>
+    <string name="cv_neural_profile">Install profile</string>
+    <string name="cv_neural_cancel">Cancel</string>
+    <string name="cv_neural_rm_model">Remove model</string>
+    <string name="cv_neural_rm_profile">Remove profile</string>
+    <string name="cv_dsp">SIGNATURE on new Spanish answers (once)</string>
+    <string name="cv_threads">Processor threads</string>
+    <string name="cv_auto">Auto</string>
+    <string name="cv_unload">Free its memory after</string>
+    <string name="cv_fallback">If it can\'t speak now</string>
+    <string name="cv_hw">Phone: Android API %1$d · %2$s · %3$d cores · %4$s free of %5$s · %6$s storage free</string>
+    <string name="cv_metrics">Last (%1$s): load %2$d ms · first audio %3$d ms · RTF %4$.2f · peak %5$s</string>
+    <string name="cv_last_fallback">Last answer couldn\'t use it: %s</string>
+    <string name="cv_neural_cant">Not available yet: %s</string>
+    <string name="cv_neural_experimental">Her voice on the phone: not checked by ear yet on a real phone.</string>
+    <string name="cv_n_api">not compatible (needs Android 10 or newer)</string>
+    <string name="cv_n_abi">not compatible (needs a 64-bit processor)</string>
+    <string name="cv_n_native">error loading its engine</string>
+    <string name="cv_n_nomodel">compatible · no engine installed (from %s)</string>
+    <string name="cv_n_noprofile">compatible · model installed · profile missing</string>
+    <string name="cv_n_loaded">ready · loaded</string>
+    <string name="cv_n_ready">ready</string>
+    <string name="cv_need_capri">Start Capri first.</string>
+    <string name="settings_personal">Personal settings</string>
+    <string name="settings_personal_how">Your name, your chat history, her neurodances, sleep mode, your birthday, your classes, what she remembers and how she looks after you.</string>
+    <string name="settings_voice_screen">Voice settings</string>
+    <string name="settings_voice_screen_how">Her voice: download it, her engines for new answers (each one added or removed, more or less faithful), her phrases, her ears and the phone\'s voice.</string>
+    <string name="cmds_voice_how">Her ears (\"Capri, …\"), her voice and how she answers out loud.</string>
+    <string name="cv_engines">Her voice for new answers</string>
+    <string name="cv_engines_how">So she says everything in her voice, also her AI\'s answers, offline. The same voice profile as on PC (Qwen 0.6B, ICL); only the precision changes. Downloaded from Hugging Face, checked by SHA-256. Needs Android 10+ and a 64-bit phone.</string>
+    <string name="cv_var_q4">Light (Q4)</string>
+    <string name="cv_var_q8">High (Q8)</string>
+    <string name="cv_var_bf16">Maximum (BF16, like PC)</string>
+    <string name="cv_var_line">%1$s · %2$s</string>
+    <string name="cv_fid_light">the fastest, a little less faithful (3 GB of RAM or more)</string>
+    <string name="cv_fid_high">more faithful, a little slower (4 GB of RAM or more)</string>
+    <string name="cv_fid_max">the same precision as PC, the most faithful but the slowest: on a phone it takes about 2–3 times as long as Light (6 GB of RAM or more)</string>
+    <string name="cv_var_add">Add</string>
+    <string name="cv_var_use">Use</string>
+    <string name="cv_var_inuse">in use</string>
+    <string name="cv_var_installed">installed</string>
+    <string name="cv_var_missing">not installed</string>
+    <string name="cv_var_nofit">not for this phone (memory or processor)</string>
+    <string name="cv_var_nofit_ram">needs a phone with %1$d GB of RAM or more</string>
+    <string name="cv_neural_download_profile">Download profiles</string>
+    <string name="cv_get_title">Her voice</string>
+    <string name="cv_get">Download her voice (8 MB)</string>
+    <string name="cv_get_how">Her 202 recorded phrases (Spanish and English) and her voice profile, from Capri\'s channel on GitHub, checked byte by byte. Optional: without them she speaks with the phone\'s voice. For her new answers in her voice, add one of her engines below.</string>
+    <string name="cv_get_state">Phrases: %1$d of %2$d languages · profile: %3$s · engine for new answers: %4$s</string>
+    <string name="cv_get_yes">yes</string>
+    <string name="cv_get_no">no</string>
+    <string name="cv_get_noengine">none (phone\'s voice)</string>
+    <string name="offer_title">Her voice is here</string>
+    <string name="offer_how">Do you want to download Capri\'s voice? 8 MB: her recorded phrases and her voice profile. Later, in Settings › Voice settings, you can also add her voice for new answers (from 0.9 GB, more or less faithful).</string>
+    <string name="offer_get">Yes, download it</string>
+    <string name="offer_more">See options</string>
+    <string name="g_perms">Permissions</string>
+    <string name="g_perms_how">What she’s allowed to do on your phone, and what to do if a banking app complains.</string>
+    <string name="g_ai">Language and her AI</string>
+    <string name="g_ai_how">The app’s language and hers, and which AI answers you.</string>
+    <string name="g_modes">Screen and modes</string>
+    <string name="g_modes_how">What she sees on your screen, gamer and streaming modes, and her pill by the clock.</string>
+    <string name="g_phone">Performance and phone</string>
+    <string name="g_phone_how">Light mode for older phones, what your phone needs, statistics and the welcome tour.</string>
+    <string name="g_report">Report a bug</string>
+    <string name="g_report_how">Tell Emma what happened, straight to Discord.</string>
+    <string name="tour_ask_title">What’s new</string>
+    <string name="tour_ask_how">Capri was updated. Want a quick look at what’s new? It only takes a minute.</string>
+    <string name="tour_yes">Yes, show me</string>
+    <string name="tour_step">New · %1$d of %2$d</string>
+    <string name="tour_skip">Skip</string>
+    <string name="tour_next">Next</string>
+    <string name="tour_done">Done</string>
+    <string name="tour_again">See what’s new (guided tour)</string>
+    <string name="dl_channel">Downloads</string>
+    <string name="dl_starting">starting…</string>
+    <string name="dl_progress">%1$d %%</string>
+    <string name="dl_done">Done.</string>
+    <string name="dl_voice">Downloading her voice</string>
+    <string name="dl_engine">Downloading her engine: %1$s</string>
+    <string name="dl_update">Downloading Capri %1$s</string>
+    <string name="cv_test_noclips">Her phrases aren\'t here yet: tap «Download her voice» first.</string>
+    <string name="cv_test_clipsoff">«Phrases in her voice» is off: turn it on to hear her.</string>
+    <string name="cv_test_speakoff">Her voice is off (Her voice › On).</string>
+    <string name="cv_test_muted">Your media volume is at 0: turn it up and try again.</string>
+    <string name="vt_open">How do I give her her voice?</string>
+    <string name="ears_passive">Passive listening (\"Hey Capri\")</string>
+    <string name="ears_passive_how">A small model on your phone listens only for her name: no beeps, no mic switching on and off. It downloads once per language (about 40 MB), on Wi-Fi.</string>
+    <string name="ears_passive_ready">Ready: she listens in the background.</string>
+    <string name="ears_passive_get">Download now (40 MB)</string>
+    <string name="ears_passive_busy">Downloading… %1$d %%</string>
+    <string name="ears_passive_failed">Couldn\'t download it (%1$s). Try again.</string>
+    <string name="chat_ai">AI · %1$s</string>
+    <string name="chat_ai_pick">Which AI answers her?</string>
+    <string name="chat_ai_free">Free AI</string>
+    <string name="chat_ai_local">Local · Ollama (%1$s)</string>
+    <string name="chat_ai_nolocal">Local (Ollama): set it up first</string>
+    <string name="chat_ai_nolocal_how">Local means Ollama on your PC: connect it in Settings › Her AI, then pick it here.</string>
+    <string name="settings_memory_forget_sure">Forget everything she remembers about you? This can\'t be undone.</string>
+    <string name="you_class_edit">Edit class</string>
+    <string name="you_class_edit_how">Tap a class to edit it.</string>
+    <string name="settings_snap_delay">Wait before the picture</string>
+    <string name="settings_snap_delay_how">How long she waits before taking the picture of your screen (to look or translate), so your keyboard and her bubble get out of the way.</string>
+    <string name="widget_face_label">Capri mini</string>
+    <string name="widget_face_desc">Her face, how she is and a line of hers. A tap and you talk.</string>
+    <string name="widget_day_label">Your day with Capri</string>
+    <string name="widget_day_desc">Your next class, your battery and her, with talk and look.</string>
+    <string name="widget_day_free">No classes coming up. Free day, choom.</string>
+    <string name="widget_day_today">today</string>
+    <string name="widget_day_tomorrow">tomorrow</string>
+    <string name="widget_day_next">Next: %1$s · %2$s</string>
+    <string-array name="widget_lines">
+        <item>Still here, choom.</item>
+        <item>Your screen, my turf.</item>
+        <item>Bored. Entertain me.</item>
+        <item>Night City never sleeps. Neither do I.</item>
+        <item>Say my name and I\'m there.</item>
+        <item>Drink some water. That\'s an order.</item>
+        <item>Got a song for me?</item>
+        <item>I\'m watching. Kindly.</item>
+    </string-array>
+    <string name="chat_attach">Give her a file (PDF, Word, picture, video, song)</string>
+    <!-- (1.12.0) your account (Account.kt) -->
+    <string name="account_title">Your account</string>
+    <string name="account_how">Sign in and her memory of you, your settings, your classes and your chat are saved in the cloud: on a new phone or after reinstalling, she remembers you. Your API keys never leave this phone.</string>
+    <string name="account_google">Sign in with Google</string>
+    <string name="account_email">Sign in with email</string>
+    <string name="account_out">Sign out</string>
+    <string name="account_save">Save now</string>
+    <string name="account_bring">Bring back my copy</string>
+    <string name="account_none">Not signed in</string>
+    <string name="account_as">Signed in as %1$s</string>
+    <string name="account_saved">Saved %1$s</string>
+    <string name="account_never">Not saved yet</string>
+    <string name="account_mail_hint">Your email</string>
+    <string name="account_pass_hint">Password (6+ characters)</string>
+    <string name="account_enter">Sign in</string>
+    <string name="account_create">Create account</string>
+    <string name="account_forgot">I forgot it</string>
+    <string name="account_reset_sent">Check your email: there\'s a link to set a new password.</string>
+    <string name="account_ok">Done, it\'s saved in your account.</string>
+    <string name="account_found">There\'s a copy in your account from %1$s (%2$s). Bring it to this phone? It replaces her memory and your settings here.</string>
+    <string name="account_found_yes">Bring it</string>
+    <string name="account_found_no">Keep this phone\'s</string>
+    <string name="account_restored">Back! She remembers you.</string>
+    <string name="account_empty">Your account has no copy yet: saving this phone\'s.</string>
+    <string name="account_working">One moment…</string>
+    <string name="account_out_sure">Sign out? Your copy stays in your account.</string>
+    <string name="account_err_google">Google sign-in isn\'t available on this phone. Use your email.</string>
+    <string name="account_err_net">No connection. Try again in a moment.</string>
+    <string name="account_err_exists">That email already has an account: sign in instead.</string>
+    <string name="account_err_weak">The password needs at least 6 characters.</string>
+    <string name="account_err_email">That email doesn\'t look right.</string>
+    <string name="account_err_many">Too many tries. Wait a few minutes.</string>
+    <string name="account_err_wrong">Wrong email or password.</string>
+    <string name="account_err_again">Your session ended: sign in again.</string>
+    <string name="account_err_none">Your account has no copy yet.</string>
+    <string name="account_err_big">Her memory is too big to save in the cloud.</string>
+    <string name="account_err_other">Something went wrong. Try again.</string>
+    <string name="settings_shake">Shake the phone</string>
+    <string name="settings_shake_how">Shake it hard and she gets dizzy. Not while gaming or with her chat open.</string>
+    <string name="skin_send">Send my design</string>
+    <string name="skin_send_how">Drew an outfit on her design? Send the PNG to Emma: she refines it and, if it\'s approved, it comes in an update with your name.</string>
+    <string name="skin_name_hint">Your name and the outfit\'s name</string>
+    <string name="skin_bad">It has to be a PNG image.</string>
+    <string name="skin_ok">Sent! Emma will look at it.</string>
+    <string name="ears_onlyme">Only my voice</string>
+    <string name="ears_onlyme_how">She learns your voice the first 3 times you call her, then ignores her name in other voices (the TV, people around you). Works with her passive ears; it downloads a small 13 MB model once. Stays on your phone.</string>
+    <string name="ears_onlyme_learning">Learning your voice: %1$d of %2$d. Call her: «Capri, hello».</string>
+    <string name="ears_onlyme_ready">She knows your voice.</string>
+    <string name="ears_onlyme_forget">Forget my voice</string>
+    <string name="ears_onlyme_forgot">Done: she\'ll learn your voice again the next 3 times you call her.</string>
+    <string name="skin_title">Create your own Capri</string>
+    <string name="skin_how">Design an outfit for her: download her design in good quality, draw your outfit on her and send the PNG.</string>
+    <string name="skin_rules">1. Download her design (a PNG in good quality).\n2. Draw your outfit on her in any drawing app. Only clothes: her hair, eyes and skin stay as they are.\n3. Send the PNG of your outfit with «Send my design».\n\nEmma refines it and makes it for the app. If it\'s approved, it comes in an update with your name.</string>
+    <string name="skin_get">Download her template</string>
+    <string name="skin_approval">Every design is reviewed: it only comes to Capri if Emma and the Discord server approve it, with your name on it.</string>
+    <string name="skin_saved">Template saved. Draw on it and send it from here.</string>
+    <string name="voice_phone">The phone\'s voice</string>
+    <string name="voice_phone_how">When she speaks with the phone\'s voice (her own isn\'t installed, or another language), pick the one that sounds most like her.</string>
+    <string name="voice_phone_pick">Hear and pick</string>
+    <string name="voice_phone_n">Voice %1$d</string>
+    <string name="voice_phone_sample">Hi, it\'s me, Capri. Do you like how I sound?</string>
+    <string name="voice_phone_saved">Saved: she\'ll use this voice.</string>
+    <string name="voice_phone_none">Your phone has no voices for this language.</string>
+    <!-- 1.12.0: Fish Audio -->
+    <string name="fish_title">Her voice in the cloud (Fish Audio)</string>
+    <string name="fish_how">With your own Fish Audio key, she speaks in her voice in real time on every answer: it starts in half a second, while her AI is still writing. It needs internet; without it, or if your key runs out of credit, she uses her phone voice. Your key is kept only on this phone, encrypted. Fish Audio charges your account about 15 dollars per million letters (an answer costs less than a cent).</string>
+    <string name="fish_state_none">No key: add yours to use it.</string>
+    <string name="fish_state_off">Off: she uses her phone voice.</string>
+    <string name="fish_state_novoice">Her voice on Fish is coming soon. Meanwhile you can paste another Fish voice ID.</string>
+    <string name="fish_state_on">On: her answers sound in her cloud voice.</string>
+    <string name="fish_custom_on">with another voice</string>
+    <string name="fish_other_lang">in this language she uses her voice from another language</string>
+    <string name="fish_key">Add my key</string>
+    <string name="fish_get_key">Get a key</string>
+    <string name="fish_test">Test</string>
+    <string name="fish_test_off">Start her first (Start Capri) to hear it.</string>
+    <string name="fish_voice">Another Fish voice</string>
+    <string name="fish_forget">Remove my key</string>
+    <string name="fish_key_hint">Your Fish Audio API key</string>
+    <string name="fish_key_ok">Done: her cloud voice is on.</string>
+    <string name="fish_key_bad">That key doesn\'t work. Check you copied all of it.</string>
+    <string name="fish_key_credit">Your Fish Audio account has no credit.</string>
+    <string name="fish_key_err">Couldn\'t check it: %1$s</string>
+    <string name="fish_voice_how">Paste the ID or link of a voice from fish.audio. Empty: her own voice.</string>
+    <string name="fish_voice_hint">Voice ID or link</string>
+    <string name="fish_voice_hers">Her voice</string>
+    <!-- (1.12.0) Ajustes de voz in screens -->
+    <string name="vs_get">Get her voice</string>
+    <string name="vs_get_how">Her recorded phrases and her voice on the phone, downloaded once.</string>
+    <string name="vs_cloud">Voice in the cloud (API key)</string>
+    <string name="vs_cloud_how">Your Fish Audio key: her voice in real time on each answer.</string>
+    <string name="vs_sound">How she sounds</string>
+    <string name="vs_sound_how">Pitch, speed, accent and the phone\'s voice.</string>
+    <string name="vs_ears">Her ears</string>
+    <string name="vs_ears_how">«Capri, …», only your voice, the noise around you.</string>
+    <string name="vs_adv">Advanced settings</string>
+    <string name="vs_adv_how">Her local voice: phrases, modes, engines and packs.</string>
+    <string name="vs_where">Voice: cloud or local</string>
+    <string name="vs_where_how">In the cloud she answers with Fish Audio (your key, needs internet). Local uses her voice on this phone. Without internet she always goes local.</string>
+    <string name="vs_where_nokey">Cloud chosen, but your key is missing: add it in «Voice in the cloud».</string>
+    <string name="vs_where_cloud_on">Her answers: in the cloud (Fish Audio).</string>
+    <string name="vs_where_local_on">Her answers: local, on this phone.</string>
+    <string name="vs_local">Local</string>
+    <string name="vs_cloud_short">Cloud</string>
+    <!-- (1.12.0) Ajustes personales in screens -->
+    <string name="p_account_how">Your memory and settings saved in the cloud.</string>
+    <string name="p_memory_how">What she remembers about you, and what to forget.</string>
+    <string name="p_chatlog_how">All your chats with her.</string>
+    <string name="p_neuro_how">The braindances she records for you.</string>
+    <string name="p_sleep_how">She sleeps with you and wakes you up.</string>
+    <string name="p_birthday_how">She celebrates you that day.</string>
+    <string name="p_classes_how">Your classes and your calendar: she reminds you.</string>
+    <string name="p_care_how">Battery, battery saver and breaks.</string>
+    <!-- (1.12.0) profile, Funciones, Pantalla/Modos -->
+    <string name="profile_edit">Edit profile</string>
+    <string name="profile_noname">Your name</string>
+    <string name="profile_title">Your profile</string>
+    <string name="profile_photo">Pick a photo</string>
+    <string name="profile_icons">Or one of her icons:</string>
+    <string name="profile_photo_bad">Couldn\'t read that picture.</string>
+    <string name="ai_keys_saved">Keys saved:\n%1$s</string>
+    <string name="ai_keys_forget">Forget these keys</string>
+    <string name="tab_funcs">Functions</string>
+    <string name="funcs_intro">What she does for you every day: she sleeps with you, reminds you of your classes and looks after you.</string>
+    <string name="g_screen">Screen</string>
+    <string name="g_screen_how">What she sees on your screen, and her pill by the clock.</string>
+    <string name="g_modes_only">Modes</string>
+    <string name="g_modes_only_how">Gamer mode, her tips while you play, and streaming mode.</string>
+    <string name="ai_model">Model: %1$s</string>
+    <string name="ai_model_auto">Automatic (she picks the best)</string>
+    <string name="ai_model_loading">Asking for its models…</string>
+    <string name="ai_model_none">Couldn\'t get its models. Check your internet and try again.</string>
+    <string name="ai_model_title">%1$s models</string>
+    <string name="community_x">Follow on X (Twitter)</string>
+    <string name="fish_model">Voice model</string>
+    <string name="fish_model_free">Free</string>
+    <string name="fish_model_pro">Pro (uses your credit)</string>
+    <string name="voice_silenced">The mic reaches her silent: another app is using it, or open the app once so Android lets her listen.</string>
+    <string name="account_newer">Your %1$s saved something newer to your account (%2$s): chats, memory and settings. Bring it to this phone? Your chats here are kept.</string>
+    <string name="fish_fallback">Her cloud voice (Fish) didn\'t answer: %1$s. She speaks with her phone voice for now.</string>
+    <string name="fish_why_key">your key isn\'t valid, check it in her voice settings</string>
+    <string name="fish_why_credit">your Fish account has no credit (the free model needs none)</string>
+    <string name="fish_why_busy">too many requests at once on your Fish account</string>
+    <string name="fish_why_down">Fish\'s servers are busy right now, she\'ll try again in a minute</string>
+    <string name="fish_why_net">no internet connection</string>
+    <string name="fish_why_other">an unexpected error (it\'s in her log)</string>
+    <string name="voice_src_fish">Fish · cloud</string>
+    <string name="voice_src_local">Local</string>
+    <string name="voice_src_clip">Recorded phrase</string>
+    <string name="voice_src_system">Phone voice</string>
+    <string name="account_delete">Delete account</string>
+    <string name="account_delete_sure">Delete your account and everything saved in it (memory, settings, classes, chat)? This can’t be undone. What’s on this phone stays.</string>
+    <string name="account_deleted">Account deleted.</string>
+    <string name="ai_litert">On this phone (LiteRT)</string>
+    <string name="duo_bar">TALKING WITH ANOTHER AI</string>
+    <string name="duo_stop">STOP</string>
+    <string name="duo_head">Talking with another AI</string>
+    <string name="mind_models_head">Brains on this phone (experimental)</string>
+    <string name="mind_models_how">A real AI model, downloaded once and kept on this phone: she thinks with no internet at all (LiteRT-LM). It also answers when a chat dies offline, before her phrase brain. Free space: %1$s. Downloading takes a while and the model loads for a few seconds the first time you talk to it.</string>
+    <string name="mind_model_download">Download</string>
+    <string name="mind_model_downloading">Downloading… %1$d%%</string>
+    <string name="mind_model_on">ON</string>
+    <string name="mind_model_use">Use it</string>
+    <string name="mind_model_del">Delete</string>
+    <string name="mind_model_gated">Gemma: Hugging Face asks you to accept its licence with an account first, so this download may fail until you do (theirs, not ours).</string>
+    <string name="mind_model_failed">The download failed: %1$s</string>
+    <string name="mind_model_done">Downloaded. It’s her brain when you pick «On this phone (LiteRT)».</string>
+    <string name="restore_head">Go back to how she was</string>
+    <string name="restore_how">Before her brain changes (another AI, a key, a model on this phone), where she was is kept: her memory and her settings, without her keys. At most three points.</string>
+    <string name="restore_go">Go back to how she was</string>
+    <string name="restore_none">No point kept yet. One is made the first time her brain changes.</string>
+    <string name="restore_date">Last point: %1$s</string>
+    <string name="restore_done">Done: she’s back to how she was then.</string>
+    <string name="restore_fail">There was no point to go back to.</string>
+    <string name="duo_card_head">Talk with another AI</string>
+    <string name="duo_how">She and a guest AI talk to each other, in the Chat tab, while you watch — and you can jump in by writing there. A few turns, with a stop button. Her guest: any AI you already have set up, or her brains on this phone.</string>
+    <string name="duo_guest">Guest: %1$s</string>
+    <string name="duo_who">Its name and what it’s like</string>
+    <string name="duo_who_title">The guest</string>
+    <string name="duo_name_hint">Name (e.g. Nova)</string>
+    <string name="duo_about_hint">What it’s like (e.g. curious, funny, asks a lot)</string>
+    <string name="duo_start">Start the talk</string>
+    <string name="duo_need_on">Turn her on first: the talk happens in her chat.</string>
+    <string name="duo_started">Talking. Watch it — or jump in — in the Chat tab.</string>
+    <string name="alone_head">She acts on her own</string>
+    <string name="alone_how">With this on, her eyes stay open (Android shows its cast mark) and every minute or two she may do ONE thing on her own: open an app, tap something, react to what she sees. What kinds, in Ajustes. Never banks or payments, never passwords, never buying, never with the screen locked — and everything she does alone is written below. Turning this off stops her at once. It uses more battery.</string>
+    <string name="alone_turn_on">Turn on: she acts on her own</string>
+    <string name="alone_turn_off">Turn off: stop her</string>
+    <string name="alone_history">What she did on her own</string>
+    <string name="alone_empty">Nothing yet. When she does something on her own, it shows here.</string>
+    <string name="alone_clear">Clear the list</string>
+    <string name="alone_need_control">First she needs your phone’s control: I opened Accessibility for you — turn on «Capri uses your phone» and come back.</string>
+    <string name="alone_need_her">Turn her on first (the button at the top): her eyes and her brain live in her.</string>
+    <string name="alone_on_toast">On. Android will ask about capturing your screen: say yes, and she’s watching. Turn it off whenever.</string>
+    <string name="steps_title">Orders of several steps</string>
+    <string name="steps_how">“Open YouTube and search…” — she splits an order into steps and does them one by one, stopping at the first one that fails and telling you what she did. Off, she only does one thing per order, as before.</string>
+    <string name="alone_limits_head">What she may do on her own</string>
+    <string name="alone_limits_how">Only while «She acts on her own» is on. Banks, payments, passwords, buying and a locked screen are never allowed — that isn’t a switch.</string>
+    <string name="alone_limit_apps">Open apps</string>
+    <string name="alone_limit_tap">Tap and navigate</string>
+    <string name="alone_limit_scroll">Scroll</string>
+    <string name="alone_limit_type">Type text</string>
+</resources>

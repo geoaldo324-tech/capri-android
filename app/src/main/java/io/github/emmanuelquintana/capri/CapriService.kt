@@ -1,0 +1,484 @@
+package io.github.emmanuelquintana.capri
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.IBinder
+import android.provider.Settings
+import org.json.JSONObject
+
+/**
+ * Capri's process, as main.js is on the desktop: her window (Overlay), the hook server Claude
+ * Code reaches (HookServer), and her "tray icon", which on a phone is this service's notification:
+ * Menu, Put away / Bring back (Ctrl+Alt+C), Quit.
+ */
+class CapriService : Service() {
+    override fun attachBaseContext(newBase: android.content.Context) = super.attachBaseContext(Lang.wrap(newBase))
+
+    var overlay: Overlay? = null
+        private set
+    private lateinit var bridge: HostBridge
+    private var hooks: HookServer? = null
+    private var visible = true
+    var ears: Ears? = null
+        private set
+    private var games: GameWatch? = null // gamer mode on its own, when you open a game (GameWatch.kt)
+    val eyes by lazy { eyesMade = true; Eyes(this) } // her look at your screen, only when you ask (Eyes.kt)
+    private var eyesMade = false
+
+    private var screenOffAt = 0L
+    private var shake: Shake? = null
+    private val screen = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    screenOffAt = System.currentTimeMillis()
+                    Sleep.screenOff(context) // (1.11.0) her sleep mode counts it
+                    overlay?.pause()
+                    shake?.set(false)
+                }
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                    if (intent.action == Intent.ACTION_SCREEN_ON) Sleep.screenOn(context)
+                    overlay?.resume()
+                    shake?.set(true)
+                    rebindNotes()
+                    // how long the phone was put down (her breaks: phone-care.js)
+                    if (screenOffAt > 0) {
+                        val off = System.currentTimeMillis() - screenOffAt
+                        screenOffAt = 0L
+                        overlay?.emit("screen:on", JSONObject().put("offMs", off).toString())
+                    }
+                }
+            }
+            ears?.update() // her ears only with the screen on
+        }
+    }
+
+    // the battery, as Android tells every app (no permission): her alerts when it's charged or low
+    private var lastBattery = ""
+    private val battery = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+            val scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100)
+            if (level < 0 || scale <= 0) return
+            val status = intent.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
+            val plugged = intent.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0
+            val percent = Math.round(level * 100f / scale)
+            val charging = plugged || status == android.os.BatteryManager.BATTERY_STATUS_CHARGING
+            val key = "$percent/$charging"
+            if (key == lastBattery) return
+            lastBattery = key
+            overlay?.emit("battery:update", JSONObject().put("percent", percent).put("charging", charging)
+                .put("full", status == android.os.BatteryManager.BATTERY_STATUS_FULL).toString())
+        }
+    }
+    // (1.10.0) an app uninstalled: she fires her beam at it (laser.js). Its name is looked up while it
+    // was still there (the list of your apps her page keeps), here only its package.
+    private val removed = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return // (an update, not gone)
+            val pkg = intent.data?.schemeSpecificPart ?: return
+            if (pkg == packageName) return
+            overlay?.emit("phone:removed", JSONObject().put("pkg", pkg).toString())
+        }
+    }
+
+    /**
+     * (1.10.0) Your notifications and music card missing on some phones (Xiaomi, HyperOS) until a heavy
+     * game was opened: Android had let go of her notification listener and didn't bind it again. Asked
+     * to, when she starts and each time the screen comes on.
+     */
+    fun rebindNotes() {
+        if (CapriNotifications.instance != null || !CapriNotifications.allowed(this)) return
+        runCatching {
+            android.service.notification.NotificationListenerService.requestRebind(android.content.ComponentName(this, CapriNotifications::class.java))
+            Diag.add("I", "notifications: asked Android to connect her again")
+        }
+    }
+
+    /** The battery right now, for her page when it's (re)loaded. */
+    fun batteryNow() {
+        lastBattery = ""
+        registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.let { battery.onReceive(this, it) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            runCatching { hot(getSystemService(android.os.PowerManager::class.java)!!.currentThermalStatus) }
+    }
+
+    // (1.12.0, Emma: "me decía que mi cpu estaba al 85") the phone getting warm (Android 10+): her page draws less
+    // often (saver.js) and her passive ears listen more lightly (WakeWord.kt) until it cools down
+    @Volatile var thermal = 0
+        private set
+    private fun hot(status: Int) {
+        thermal = status
+        overlay?.emit("phone:hot", JSONObject().put("level", status).toString())
+    }
+    private val thermalListener: Any? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+        android.os.PowerManager.OnThermalStatusChangedListener { st ->
+            if ((st >= android.os.PowerManager.THERMAL_STATUS_MODERATE) != (thermal >= android.os.PowerManager.THERMAL_STATUS_MODERATE))
+                Diag.add("I", "phone ${if (st >= android.os.PowerManager.THERMAL_STATUS_MODERATE) "warm ($st): she goes lighter" else "cool again ($st)"}")
+            hot(st)
+        } else null
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    // Android running short: her page drops what it can reload (her intro's drawings, her effects'
+    // canvas), so Android has no reason to close her
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_LOW) overlay?.trim()
+        // (1.11.0, V8.5) her neural voice's model (~1 GB) goes first; it loads again on her next answer.
+        // (1.11.8) Not on TRIM_MEMORY_UI_HIDDEN (20): that only means the app's screens went to the background,
+        // which happened every time you left the app, and her next answer had to load the model all over again.
+        if (level >= TRIM_MEMORY_RUNNING_LOW && level != TRIM_MEMORY_UI_HIDDEN) CapriNeural.release("memory")
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        overlay?.turned()
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        Diag.init(this)
+        running = true
+        current = this
+        bridge = HostBridge(this)
+        visible = bridge.store.configFlag("visible", true)
+        createChannel()
+        checkUpdates()
+        startForegroundCompat()
+        Diag.add("I", "service started (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT})")
+        CapriWidget.update(this, visible)
+        if (!Settings.canDrawOverlays(this)) {
+            Diag.add("E", "no permission to show over other apps")
+            // no right to be on top: the app asks for it (MainActivity), she starts from there
+            stopSelf()
+            return
+        }
+        overlay = try {
+            Overlay(this, bridge).also { it.show() }
+        } catch (e: Exception) {
+            Diag.add("E", "her window could not open: ${e.message}")
+            null
+        }
+        ears = Ears(this).also { it.update() }
+        // (1.12.0) a shake of the phone: she reacts (shake.js)
+        shake = Shake(this) { overlay?.emit("phone:shaken", "{}") }.also { it.set(true) }
+        games = GameWatch(this).also { it.start() }
+        hooks = HookServer(assets) { evt -> overlay?.emit("claude:event", evt) }.also { it.start() }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(screen, filter, RECEIVER_NOT_EXPORTED)
+        else registerReceiver(screen, filter)
+        val power = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(battery, power, RECEIVER_NOT_EXPORTED)
+        else registerReceiver(battery, power)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) runCatching {
+            getSystemService(android.os.PowerManager::class.java)!!.addThermalStatusListener(mainExecutor, thermalListener as android.os.PowerManager.OnThermalStatusChangedListener)
+        }
+        // (a system broadcast: exported, or Android 14 never hands it over)
+        val gone = IntentFilter(Intent.ACTION_PACKAGE_REMOVED).apply { addDataScheme("package") }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(removed, gone, RECEIVER_EXPORTED)
+        else registerReceiver(removed, gone)
+        rebindNotes()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_MENU -> command("menu")
+            ACTION_TOGGLE -> command("toggle")
+            ACTION_SUMMON -> if (pageReady) command("summon") else queued = "summon"
+            ACTION_QUIT -> quit()
+            ACTION_CHAT -> if (pageReady) command("chat") else queued = "chat" // (her widget can start her with it)
+            ACTION_LOOK -> if (pageReady) command("look") else queued = "look"
+            ACTION_SETUP -> if (pageReady) command("setupChat") else queued = "setupChat"
+            ACTION_WARDROBE -> if (pageReady) command("wardrobe") else queued = "wardrobe"
+            // something shared with her (ShareActivity): her page takes it (share.js)
+            ACTION_SHARE -> if (pageReady) shared() else shareQueued = true
+            // debug builds only (the service isn't exported otherwise): what she'd hear, for tests
+            ACTION_HEAR -> if (BuildConfig.DEBUG) overlay?.emit("capri:heard", JSONObject().put("text", intent.getStringExtra("text") ?: "").toString())
+            // (as if your phone were playing something, or that kind of app were in front: react.js)
+            ACTION_AGENDA -> if (BuildConfig.DEBUG) Agenda.demo(this)
+            ACTION_NEURALTEST -> if (BuildConfig.DEBUG) CapriNeural.selfTest(this)
+            ACTION_VOICETEST -> if (BuildConfig.DEBUG) VoiceSelfTest.run(this)
+            // (1.11.7, debug only) her voice in the real moments, for tools/ci/voice-flows.sh: the phone on vibrate,
+            // one of her lines as a moment of hers (voicelines.js), a message in the app's Chat tab (appchat.js)
+            ACTION_FLOWTEST -> if (BuildConfig.DEBUG) when (intent.getStringExtra("do")) {
+                "ringer" -> runCatching {
+                    val audio = getSystemService(android.media.AudioManager::class.java)
+                    audio.ringerMode = if (intent.getStringExtra("mode") == "vibrate") android.media.AudioManager.RINGER_MODE_VIBRATE else android.media.AudioManager.RINGER_MODE_NORMAL
+                    android.util.Log.i("CapriVoiceTest", "ringer=${audio.ringerMode}")
+                }.onFailure { android.util.Log.i("CapriVoiceTest", "ringer failed ${it.message}") }
+                "moment" -> overlay?.emit("debug:moment", JSONObject().put("pool", intent.getStringExtra("pool") ?: "").toString())
+                "chat" -> AppChat.ask(this, intent.getStringExtra("text") ?: "")
+                // her answer as listen.js/chatvoice.js send it (kind answer): the engine you picked says it
+                "say" -> ears?.say(intent.getStringExtra("text") ?: "", intent.getStringExtra("lang") ?: "en-US",
+                    JSONObject().put("id", intent.getStringExtra("id") ?: "flow-say").put("kind", "answer"))
+            }
+            ACTION_SENSE -> if (BuildConfig.DEBUG) overlay?.emit("phone:activity", JSONObject().put("sound", intent.getBooleanExtra("sound", false)).put("kind", intent.getStringExtra("kind") ?: "").toString())
+        }
+        return START_STICKY
+    }
+
+    // a command for her page from the app's screen, held until her page is up
+    @Volatile var pageReady = false
+        private set
+    @Volatile private var queued: String? = null
+
+    /** (1.12.2) settings from the app's screens while her page was starting (or starting again): sent once it's up.
+     *  It may have read config.json before they were written there, and would save its old copy over them. */
+    private val settingsQueued = mutableListOf<String>()
+
+    fun queueSettings(json: String) = synchronized(settingsQueued) { if (settingsQueued.size < 40) settingsQueued.add(json) }
+
+    /** (1.12.2) her page was dropped (a fresh one coming): until it says it's up, nothing goes to it. */
+    fun pageGone() { pageReady = false }
+
+    fun onPageReady() {
+        pageReady = true
+        val held = synchronized(settingsQueued) { settingsQueued.toList().also { settingsQueued.clear() } }
+        for (json in held) overlay?.emit("settings:apply", json)
+        // after her intro, so her panel doesn't land on top of her first hello
+        queued?.let { queued = null; android.os.Handler(mainLooper).postDelayed({ command(it) }, 6000) }
+        if (shareQueued) { shareQueued = false; android.os.Handler(mainLooper).postDelayed({ shared() }, 6000) }
+        AppChat.flush(this) // (1.11.0) what you wrote in the app's Chat while she was starting
+    }
+
+    private var shareQueued = false
+    private fun shared() = overlay?.emit("share:in", "{}")
+
+    private fun command(name: String) = overlay?.emit("capri:command", JSONObject().put("name", name).toString())
+
+    /** Her settings changed (host.js saved them): what the notification shows may have too. */
+    fun onConfig(cfg: JSONObject) {
+        val g = cfg.optBoolean("gamer", false)
+        if (g != gamer) {
+            gamer = g
+            ears?.update() // gamer mode: no ears (the game's sound and your voice chat are yours)
+        }
+        val v = cfg.optBoolean("visible", true)
+        if (v != visible) {
+            visible = v
+            refreshNotification()
+            CapriWidget.update(this, visible)
+        }
+    }
+
+    /** (1.10.0) Battery saver, from her page (saver.js): what costs battery the most rests until you charge. */
+    fun setSaving(on: Boolean) {
+        if (on == saving) return
+        saving = on
+        Diag.add("I", if (on) "battery saver: on" else "battery saver: off")
+        ears?.update()
+        if (on) {
+            if (eyesMade) eyes.stopLive()
+            games?.stop()
+        } else games?.start()
+    }
+
+    /** Her ears switched on or off (the app's Settings), or the mic allowed: her service's type too. */
+    fun voiceChanged() {
+        startForegroundCompat()
+        ears?.update()
+    }
+
+    fun refreshNotification() {
+        getSystemService(NotificationManager::class.java)!!.notify(NOTIFICATION_ID, buildNotification())
+    }
+
+    fun quit() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        running = false
+        CapriNeural.cancel()
+        CapriNeural.release("stop")
+        ticker.removeCallbacks(check)
+        if (current === this) current = null
+        Diag.add("I", "service stopped")
+        CapriWidget.update(this)
+        try { unregisterReceiver(screen) } catch (_: Exception) {}
+        try { unregisterReceiver(battery) } catch (_: Exception) {}
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) runCatching {
+            getSystemService(android.os.PowerManager::class.java)!!.removeThermalStatusListener(thermalListener as android.os.PowerManager.OnThermalStatusChangedListener)
+        }
+        try { unregisterReceiver(removed) } catch (_: Exception) {}
+        hooks?.stop()
+        ears?.destroy()
+        ears = null
+        shake?.set(false)
+        shake = null
+        games?.stop()
+        games = null
+        if (eyesMade) eyes.destroy()
+        overlay?.destroy()
+        overlay = null
+        if (::bridge.isInitialized) bridge.shutdown()
+        super.onDestroy()
+    }
+
+    // ---------- her notification: the tray icon's place ----------
+
+    private fun createChannel() {
+        val nm = getSystemService(NotificationManager::class.java)!!
+        val ch = NotificationChannel(CHANNEL, getString(R.string.channel_name), NotificationManager.IMPORTANCE_LOW)
+        ch.description = getString(R.string.channel_desc)
+        ch.setShowBadge(false)
+        nm.createNotificationChannel(ch)
+    }
+
+    private fun startForegroundCompat() {
+        val n = buildNotification()
+        // the microphone, only while her ears are on (and allowed): Android shows it's in use
+        val mic = Ears.enabled(this) && Ears.allowed(this)
+        // and the screen capture, only while her eyes are open (Eyes.kt)
+        val cast = if (Eyes.projecting && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val special = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or cast
+            try {
+                startForeground(NOTIFICATION_ID, n, if (mic) special or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else special)
+            } catch (e: Exception) {
+                Diag.add("W", "microphone not allowed for her service now: ${e.message}")
+                startForeground(NOTIFICATION_ID, n, special)
+            }
+        } else if ((mic || cast != 0) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            startForeground(NOTIFICATION_ID, n, (if (mic) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0) or cast)
+        } else if (cast != 0) {
+            startForeground(NOTIFICATION_ID, n, cast)
+        } else {
+            startForeground(NOTIFICATION_ID, n)
+        }
+    }
+
+    private fun pending(action: String, code: Int) = PendingIntent.getService(
+        this, code, Intent(this, CapriService::class.java).setAction(action),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    // a newer release: her notification, and she says so on screen too (host.js)
+    private val ticker = android.os.Handler(android.os.Looper.getMainLooper())
+    private val check = Runnable { checkUpdates() }
+
+    private fun checkUpdates() {
+        Updater.checkInBackground(this) { r -> newRelease(r) }
+        UpdateJob.schedule(this)
+        ticker.removeCallbacks(check)
+        ticker.postDelayed(check, Updater.CHECK_EVERY + 60_000)
+    }
+
+    /** A newer release just found: she says so on screen too (host.js). */
+    fun newRelease(r: Updater.Release) {
+        val json = JSONObject().put("version", r.version).put("notes", r.notes).toString()
+        ticker.postDelayed({ overlay?.emit("capri:update", json) }, if (pageReady) 0 else 20_000)
+    }
+
+    // her last word, for her notification (a wink in your notification shade): what she said, her face
+    private var wink: String? = null
+    private var winkFace = "smug"
+    private var winkAt = 0L
+    private val faces = HashMap<String, android.graphics.Bitmap?>()
+
+    fun wink(line: String, face: String) {
+        wink = line.take(200)
+        winkFace = face
+        winkAt = System.currentTimeMillis()
+        refreshNotification()
+        // an old line doesn't stay there for hours: back to how she is after a while
+        ticker.removeCallbacks(winkGone)
+        ticker.postDelayed(winkGone, WINK_FOR)
+    }
+
+    private val winkGone = Runnable { wink = null; refreshNotification() }
+
+    private fun face(name: String): android.graphics.Bitmap? = faces.getOrPut(name) {
+        val file = if (name in FACES) "face-$name.png" else "capri-face.png"
+        runCatching { assets.open("capri/assets/capri/$file").use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull()
+    }
+
+    private fun buildNotification(): Notification {
+        val said = wink?.takeIf { visible }
+        return Notification.Builder(this, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notify)
+            .setContentTitle(if (said != null) "Capri" else getString(R.string.notify_title))
+            .setContentText(said ?: if (visible) getString(R.string.notify_text) else getString(R.string.notify_text_hidden))
+            .also { b ->
+                if (said != null) {
+                    b.setStyle(Notification.BigTextStyle().bigText(said))
+                    b.setWhen(winkAt).setShowWhen(true)
+                } else b.setShowWhen(false)
+                face(if (said != null) winkFace else "smug")?.let { b.setLargeIcon(it) }
+            }
+            // her colours: the shade shows her plate in ink, with her yellow (not as a live update:
+            // Android 16 only promotes notifications that aren't colorized)
+            .setColor(Hud.INK)
+            .setColorized(!LiveBar.wanted(this))
+            .setContentIntent(pending(ACTION_MENU, 1)) // a tap on it is a click on her tray icon: her menu
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .also { if (LiveBar.wanted(this)) it.addAction(Notification.Action.Builder(null, getString(R.string.live_chat), LiveBar.chat(this)).build()) }
+            .addAction(Notification.Action.Builder(null, getString(R.string.action_menu), pending(ACTION_MENU, 2)).build())
+            .addAction(Notification.Action.Builder(null, getString(if (visible) R.string.action_hide else R.string.action_show), pending(ACTION_TOGGLE, 3)).build())
+            .addAction(Notification.Action.Builder(null, getString(R.string.action_quit), pending(ACTION_QUIT, 4)).build())
+            .also { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) it.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE) }
+            // (1.11.0, Emma: "en Samsung o los que tengan islas dinámicas, unas interacciones en su píldora, como
+            // en la Now Bar, depende del dispositivo y si está disponible"): a live update on Android 16+
+            .also { LiveBar.promote(this, it, if (said != null) winkFace else "smug", visible) }
+            .build()
+    }
+
+    companion object {
+        /** Her gamer mode is on (her page's config): small in a corner, no ears. */
+        @Volatile
+        var gamer = false
+            private set
+        /** (1.10.0) Battery saver on (saver.js): her ears, her live look and her app watch rest. */
+        @Volatile var saving = false
+            private set
+        @Volatile
+        var running = false
+            private set
+        @Volatile
+        var current: CapriService? = null
+            private set
+        private const val CHANNEL = "capri"
+        private const val NOTIFICATION_ID = 1
+        private const val WINK_FOR = 10 * 60 * 1000L
+        const val ACTION_MENU = "capri.MENU"
+        const val ACTION_TOGGLE = "capri.TOGGLE"
+        const val ACTION_SUMMON = "capri.SUMMON" // (1.10.0) Android's accessibility button: out of nowhere
+        const val ACTION_QUIT = "capri.QUIT"
+        const val ACTION_SETUP = "capri.SETUP"
+        const val ACTION_WARDROBE = "capri.WARDROBE" // the app's Settings: open her wardrobe on her
+        const val ACTION_CHAT = "capri.CHAT"
+        const val ACTION_LOOK = "capri.LOOK" // her widget: look at my screen
+        const val ACTION_HEAR = "capri.HEAR"
+        const val ACTION_FLOWTEST = "capri.FLOWTEST" // (1.11.7, debug only) her voice in the real moments
+        const val ACTION_VOICETEST = "capri.VOICETEST" // (1.11.3, debug only) VoiceSelfTest: «Bajar su voz» + a phrase out loud
+        const val ACTION_NEURALTEST = "capri.NEURALTEST" // (V8.5, debug only) CapriNeural.selfTest
+        const val ACTION_SENSE = "capri.SENSE"
+        const val ACTION_AGENDA = "capri.AGENDA" // (debug: her class notification now)
+        const val ACTION_SHARE = "capri.SHARE"
+        private val FACES = setOf("aside", "calm", "laugh", "look", "many", "smug", "wide")
+
+        fun start(context: Context, action: String? = null) {
+            context.startForegroundService(Intent(context, CapriService::class.java).setAction(action))
+        }
+
+        fun send(context: Context, action: String) {
+            context.startService(Intent(context, CapriService::class.java).setAction(action))
+        }
+    }
+}

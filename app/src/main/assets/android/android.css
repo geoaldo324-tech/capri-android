@@ -1,0 +1,907 @@
+/* ------------------------------------------------------------------
+   Android only. Her own stylesheets (capri.css, classic.css) load
+   unchanged before this; here, only what a phone needs:
+   - her panels never wider than the screen
+   - no browser gestures on the overlay (the finger is her mouse, touch.js)
+   - her menu, drawn as one of her HUD plates (menu.js)
+------------------------------------------------------------------- */
+
+html,
+body {
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+
+/* a phone is ~360-430 px wide: her panels keep their desktop width when it fits, else the screen's */
+.panel,
+.panel.has-reply,
+.panel.has-report,
+.panel.is-chat {
+  max-width: calc(100vw - 24px);
+}
+
+.ticker__plate {
+  max-width: min(340px, calc(100vw - 24px));
+}
+
+/* typing to her: the field big enough for a finger, and no zoom on focus */
+.panel__input {
+  font-size: 16px;
+  min-height: 40px;
+}
+
+.panel__action {
+  min-height: 36px;
+}
+
+/* ---------- her menu ---------- */
+
+.cmenu-shade {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  /* the screen behind dimmed (and blurred, where the phone can: Overlay.kt), so her menu reads over any app */
+  background: rgba(6, 6, 9, 0.66);
+  animation: shade-in 180ms ease-out 1;
+}
+
+@keyframes shade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.cmenu {
+  --frame: var(--yellow);
+  --echo: var(--cyan);
+  position: fixed;
+  z-index: 41;
+  left: 0;
+  top: 0;
+  width: min(300px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  color: var(--paper);
+  background: var(--ink);
+  border: 2px solid var(--frame);
+  box-shadow: 4px 4px 0 var(--echo);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+  font-family: var(--font-display);
+  font-weight: 600;
+  animation: cmenu-in 160ms steps(3, end) 1;
+}
+
+[data-theme='classic'] .cmenu {
+  --frame: #9b61ea;
+  --echo: #591f97;
+}
+
+@keyframes cmenu-in {
+  0% { transform: translate(6px, 0); opacity: 0.4; }
+  50% { transform: translate(-3px, 0); opacity: 0.8; }
+  100% { transform: none; opacity: 1; }
+}
+
+.cmenu__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+}
+
+.cmenu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 16px;
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+}
+
+.cmenu__item:active {
+  background: var(--frame);
+  color: var(--ink);
+}
+
+.cmenu__item.is-off {
+  color: var(--paper-3);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 12px;
+  min-height: 30px;
+}
+
+.cmenu__item.is-back {
+  color: var(--frame);
+  border-bottom: 1px solid var(--line);
+  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+.cmenu__mark {
+  flex: 0 0 14px;
+  color: var(--frame);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: center;
+}
+
+.cmenu__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cmenu__more {
+  color: var(--frame);
+  font-size: 18px;
+}
+
+.cmenu__head {
+  padding: 14px 16px 4px;
+  color: var(--frame);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cmenu__sep {
+  height: 1px;
+  margin: 6px 16px;
+  background: var(--line);
+}
+
+/* ---------- her cards: now playing, a notice that came in (notes.js) ---------- */
+/* under her (she sits on their top edge, as on a window's), in her HUD's plate */
+
+.anote {
+  --frame: var(--yellow);
+  --echo: var(--cyan);
+  position: fixed;
+  z-index: 0;
+  left: 12px;
+  width: min(360px, calc(100vw - 24px));
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 14px;
+  color: var(--paper);
+  background: var(--ink);
+  border: 2px solid var(--frame);
+  box-shadow: 4px 4px 0 var(--echo);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+  font-family: var(--font-display);
+  touch-action: manipulation;
+}
+
+.anote[hidden] { display: none; }
+
+.anote--music { top: 58vh; }
+.anote--music.is-paused { --frame: var(--paper-3); --echo: var(--line); }
+.anote--note { top: 30vh; --echo: var(--red); }
+/* in: a glitchy slide (the notice from the right edge, the music up from below), out: torn away */
+.anote.is-in { animation: anote-in 420ms cubic-bezier(0.2, 0.9, 0.25, 1.15) both; }
+.anote--music.is-in { animation-name: anote-rise; }
+.anote.is-out { animation: anote-out 320ms cubic-bezier(0.6, 0, 0.8, 0.4) both; pointer-events: none; }
+.anote--note::after {
+  content: '';
+  position: absolute;
+  left: 0; bottom: 0;
+  height: 3px; width: 100%;
+  background: var(--red);
+  transform-origin: left;
+  animation: anote-stay var(--stay, 7000ms) linear both;
+}
+.anote--note { overflow: hidden; }
+@keyframes anote-in {
+  0% { transform: translateX(110%) skewX(-14deg); opacity: 0; filter: drop-shadow(-8px 0 0 var(--red)) drop-shadow(8px 0 0 var(--cyan)); }
+  45% { opacity: 1; }
+  60% { transform: translateX(-10px) skewX(5deg); filter: drop-shadow(-3px 0 0 var(--red)) drop-shadow(3px 0 0 var(--cyan)); }
+  72% { transform: translateX(4px) skewX(-2deg); opacity: 0.75; }
+  80% { opacity: 1; }
+  100% { transform: none; opacity: 1; filter: none; }
+}
+@keyframes anote-rise {
+  0% { transform: translateY(40px) scaleY(0.15); opacity: 0; filter: drop-shadow(0 -6px 0 var(--red)); }
+  55% { transform: translateY(-6px) scaleY(1.06); opacity: 1; }
+  70% { transform: translateY(2px) scaleY(0.98); opacity: 0.7; }
+  80% { opacity: 1; }
+  100% { transform: none; opacity: 1; filter: none; }
+}
+@keyframes anote-out {
+  0% { transform: none; opacity: 1; }
+  25% { transform: translateX(-6px) skewX(8deg); filter: drop-shadow(6px 0 0 var(--red)) drop-shadow(-6px 0 0 var(--cyan)); opacity: 0.8; }
+  40% { opacity: 1; }
+  100% { transform: translateX(-30px) scaleY(0.08); opacity: 0; filter: none; }
+}
+@keyframes anote-stay { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .anote.is-in, .anote.is-out { animation-duration: 1ms; }
+}
+
+[data-theme='classic'] .anote {
+  --frame: #9b61ea;
+  --echo: #591f97;
+}
+
+.anote__body { flex: 1; min-width: 0; }
+
+.anote__tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--cyan);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.anote__title {
+  margin-top: 2px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.anote__sub {
+  font-size: 13px;
+  color: var(--paper-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.anote__sub:empty { display: none; }
+
+.anote__ctl { display: flex; gap: 6px; }
+
+.anote button {
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  font: 700 16px var(--font-display);
+  color: var(--cyan);
+  background: var(--ink-2);
+  border: 1px solid var(--cyan);
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+}
+
+.anote button:active { color: var(--ink); background: var(--cyan); }
+.anote .anote__play { color: var(--ink); background: var(--yellow); border-color: var(--yellow); }
+
+/* the music card moves with a finger (its grip, or anywhere off its buttons) and folds to a chip */
+.anote--music { touch-action: none; padding-left: 8px; }
+.anote__grip {
+  flex: none;
+  width: 8px;
+  align-self: stretch;
+  background: radial-gradient(circle, var(--paper-3) 1.2px, transparent 1.6px) 0 0 / 4px 6px;
+  opacity: 0.8;
+}
+.anote--music.is-moving { box-shadow: 8px 8px 0 var(--echo); opacity: 0.92; }
+.anote .anote__fold { color: var(--paper-2); border-color: var(--line); min-width: 32px; }
+.anote .anote__open { display: none; }
+.anote--music.is-folded { width: auto; gap: 6px; padding: 6px 8px; }
+.anote--music.is-folded .anote__body,
+.anote--music.is-folded [data-a='previous'],
+.anote--music.is-folded [data-a='next'],
+.anote--music.is-folded .anote__fold { display: none; }
+.anote--music.is-folded .anote__open { display: block; color: var(--yellow); border-color: var(--yellow); }
+.anote .anote__x { color: var(--paper-2); border-color: var(--line); min-width: 32px; height: 32px; }
+
+/* ---------- her quick menu (quick.js): what you hold her for ---------- */
+
+.qmenu {
+  width: min(340px, calc(100vw - 24px));
+  padding: 4px 0 14px;
+}
+
+.qmenu__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.qmenu__title {
+  color: var(--frame);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.qmenu__sync {
+  color: var(--paper-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: right;
+}
+
+.qmenu__big {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  padding: 12px 12px 4px;
+}
+
+.qmenu__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 72px;
+  padding: 10px 2px 8px;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  color: var(--paper);
+  font: 600 11px/1.15 var(--font-display);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.qmenu__btn svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: var(--frame);
+  stroke-width: 1.8;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+.qmenu__btn:active,
+.qmenu__chip:active,
+.qmenu__mode:active,
+.qmenu__all:active,
+.qmenu__app:active {
+  background: var(--frame);
+  color: var(--ink);
+}
+
+.qmenu__btn:active svg {
+  stroke: var(--ink);
+}
+
+.qmenu__label {
+  padding: 12px 16px 6px;
+  color: var(--frame);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.qmenu__chips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 0 12px;
+}
+
+.qmenu__chip {
+  min-height: 38px;
+  padding: 6px 4px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper);
+  font: 600 13px/1.1 var(--font-display);
+}
+
+.qmenu__modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 0 12px;
+}
+
+.qmenu__mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper);
+  text-align: left;
+}
+
+.qmenu__mode.is-on {
+  border-color: var(--frame);
+  background: var(--ink-2);
+}
+
+.qmenu__box {
+  flex: 0 0 14px;
+  height: 14px;
+  margin-top: 2px;
+  border: 2px solid var(--frame);
+}
+
+.qmenu__mode.is-on .qmenu__box {
+  background: var(--frame);
+}
+
+.qmenu__mode-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.qmenu__mode-text b {
+  font: 600 14px/1.15 var(--font-display);
+}
+
+.qmenu__mode-text small {
+  color: var(--paper-3);
+  font: 400 11px/1.2 var(--font-mono);
+}
+
+.qmenu__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 12px 0;
+}
+
+.qmenu__all,
+.qmenu__app {
+  min-height: 44px;
+  border: 1px solid var(--frame);
+  background: var(--frame);
+  color: var(--ink);
+  font: 600 13px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.qmenu__app {
+  background: transparent;
+  color: var(--frame);
+}
+
+/* held still on her: a ring under the finger (let go for her menu, move to drag her) */
+.hold-ring {
+  position: fixed;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border: 3px solid #08f467;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(6, 6, 9, 0.5), 0 0 18px rgba(8, 244, 103, 0.6);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 60;
+}
+.hold-ring.is-on {
+  animation: hold-ring 260ms cubic-bezier(0.2, 0.9, 0.3, 1.3) forwards;
+}
+@keyframes hold-ring {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ---------- her wardrobe (wardrobe.js): a sheet from the bottom, four tabs, tiles ---------- */
+
+/* while you dress her she stands on the sheet, over its shade (and behind the sheet itself, so a
+   bigger her sitting on its edge never covers its tiles), so you see each change on her */
+body.is-dressing .capri,
+body.is-dressing .fx { z-index: 41; }
+
+.wardrobe {
+  --frame: var(--yellow);
+  --echo: var(--magenta, #ff2d6f);
+  position: fixed;
+  z-index: 42;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 16px));
+  /* one height for every tab (no jumping when you switch), and room above it for her to stand on it */
+  height: min(58vh, 520px);
+  display: flex;
+  flex-direction: column;
+  color: var(--paper);
+  background: var(--ink);
+  border: 2px solid var(--frame);
+  box-shadow: 4px 4px 0 var(--echo);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
+  font-family: var(--font-display);
+  font-weight: 600;
+  animation: cmenu-in 160ms steps(3, end) 1;
+}
+
+.wardrobe__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+}
+
+.wardrobe__title {
+  color: var(--frame);
+  font: 600 12px/1 var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.wardrobe__done {
+  min-height: 34px;
+  padding: 6px 16px;
+  border: 0;
+  background: var(--frame);
+  color: var(--ink);
+  font: 700 13px/1 var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.wardrobe__tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.wardrobe__tab {
+  min-height: 42px;
+  padding: 6px 2px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper-2);
+  font: 600 12.5px/1.1 var(--font-display);
+}
+.wardrobe__tab:last-child { border-right: 0; }
+.wardrobe__tab.is-on {
+  background: var(--frame);
+  color: var(--ink);
+}
+
+.wardrobe__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: 10px 12px 14px;
+}
+
+.wardrobe__hint {
+  margin: 0 2px 8px;
+  color: var(--paper-3);
+  font: 400 12px/1.3 var(--font-mono);
+}
+
+.wardrobe__label {
+  margin: 10px 2px 6px;
+  color: var(--frame);
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.wardrobe__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+
+.wardrobe__tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 48px;
+  padding: 6px 4px;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  color: var(--paper);
+  font: 600 11.5px/1.15 var(--font-display);
+  text-align: center;
+}
+.wardrobe__tile.is-on {
+  border-color: var(--green, #08f467);
+  box-shadow: inset 0 0 0 2px var(--green, #08f467);
+}
+.wardrobe__tile.is-locked { opacity: 0.55; }
+.wardrobe__tile:active { background: var(--frame); color: var(--ink); }
+
+.wardrobe__pic {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 34px;
+}
+.wardrobe__pic canvas { max-width: 100%; height: auto; }
+
+.wardrobe__name:empty { display: none; }
+
+.wardrobe__lock {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  padding: 2px 4px;
+  background: var(--ink);
+  color: var(--paper-2);
+  font: 600 9.5px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+
+.wardrobe__reset {
+  width: 100%;
+  margin-top: 14px;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper-2);
+  font: 600 12px/1 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* the secret (wedding.js): hearts around her, and her drawing of that moment */
+.wedding-heart {
+  position: fixed;
+  z-index: 30;
+  color: #ff2d6f;
+  text-shadow: 1px 1px 0 #7b3cff;
+  pointer-events: none;
+  opacity: 0;
+  animation: wedding-heart 1.9s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+@keyframes wedding-heart {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.1) rotate(12deg); }
+}
+.wedding-scene {
+  position: fixed;
+  z-index: 45;
+  left: 50%;
+  top: 30%;
+  width: min(96vw, 520px);
+  transform: translate(-50%, -50%) rotate(-2deg);
+  border: 3px solid #fff;
+  box-shadow: 6px 6px 0 #ff2d6f;
+  clip-path: polygon(0 6%, 96% 0, 100% 92%, 4% 100%);
+  pointer-events: none;
+  animation: cmenu-in 160ms steps(3, end) 1;
+  transition: opacity 500ms;
+}
+.wedding-scene.is-out { opacity: 0; }
+
+/* her quick menu's big buttons: two rows of three */
+.qmenu__big { grid-template-columns: repeat(3, 1fr); }
+
+/* a pose of hers (poses.js): a whole drawing where her sprite was, coming in like a cel change */
+.capri-pose {
+  position: fixed;
+  z-index: 20;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  opacity: 0;
+  transition: opacity 180ms steps(3, end);
+}
+.capri-pose.is-in { opacity: var(--pose-alpha, 1); }
+
+/* she's listening (hearing.js): little sound bars by her head */
+.capri-ears {
+  position: fixed;
+  z-index: 25;
+  width: 28px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 4px;
+  box-sizing: border-box;
+  pointer-events: none;
+  background: rgba(10, 8, 14, 0.78);
+  border: 1px solid var(--cyan);
+  box-shadow: 2px 2px 0 var(--yellow);
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+}
+.capri-ears[hidden] { display: none; }
+.capri-ears i {
+  display: block;
+  width: 3px;
+  height: 30%;
+  background: var(--cyan);
+  animation: capri-ears 1.4s ease-in-out infinite;
+}
+.capri-ears i:nth-child(2) { animation-delay: 0.2s; }
+.capri-ears i:nth-child(3) { animation-delay: 0.4s; }
+.capri-ears i:nth-child(4) { animation-delay: 0.6s; }
+.capri-ears.is-talking i { background: var(--yellow); animation-duration: 0.45s; }
+@keyframes capri-ears { 50% { height: 100%; } }
+@media (prefers-reduced-motion: reduce) { .capri-ears i { animation: none; height: 60%; } }
+
+/* cyberpsychosis (wardrobe.js, Efectos): her red split copies twitching, a jolt now and then */
+.is-psycho { animation: capri-psycho 2.6s steps(1, end) infinite; }
+@keyframes capri-psycho {
+  0%, 100% { filter: drop-shadow(-3px 0 0 #ff1744cc) drop-shadow(3px 0 0 #00e5ff55) drop-shadow(0 0 6px #ff1744aa) contrast(1.12); }
+  8% { filter: drop-shadow(-7px 1px 0 #ff1744dd) drop-shadow(5px -1px 0 #00e5ff77) drop-shadow(0 0 10px #ff1744) contrast(1.3); }
+  10% { filter: drop-shadow(4px 0 0 #ff1744cc) drop-shadow(-6px 0 0 #00e5ff66) drop-shadow(0 0 4px #ff1744aa) contrast(1.2); }
+  12% { filter: drop-shadow(-3px 0 0 #ff1744cc) drop-shadow(3px 0 0 #00e5ff55) drop-shadow(0 0 6px #ff1744aa) contrast(1.12); }
+  55% { filter: drop-shadow(-2px 0 0 #ff1744bb) drop-shadow(2px 0 0 #00e5ff44) drop-shadow(0 0 8px #ff1744cc) contrast(1.12); }
+  57% { filter: drop-shadow(-9px 0 0 #ff1744ee) drop-shadow(8px 2px 0 #00e5ff88) drop-shadow(0 0 12px #ff1744) contrast(1.4); }
+  59% { filter: drop-shadow(-3px 0 0 #ff1744cc) drop-shadow(3px 0 0 #00e5ff55) drop-shadow(0 0 6px #ff1744aa) contrast(1.12); }
+}
+@media (prefers-reduced-motion: reduce) { .is-psycho { animation: none; } }
+
+/* her birthday party for you (birthday.js) */
+.capri-confetti {
+  position: fixed;
+  top: -16px;
+  z-index: 30;
+  width: 7px;
+  height: 12px;
+  pointer-events: none;
+  animation: capri-confetti 3s cubic-bezier(0.3, 0.6, 0.6, 1) forwards;
+}
+@keyframes capri-confetti {
+  to { transform: translate(var(--dx), 105vh) rotate(var(--spin)); opacity: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) { .capri-confetti { display: none; } }
+
+/* her menus (1.9.0): a scroll bar you can see while there's more than fits (scroll-cue.js), painted as
+   the panel's background so it stays put while the rest scrolls */
+.cmenu.has-scroll {
+  background:
+    linear-gradient(var(--frame), var(--frame)) no-repeat calc(100% - 3px) var(--bar-y, 4px) / 3px var(--bar-h, 40px),
+    linear-gradient(rgba(242, 241, 232, 0.08), rgba(242, 241, 232, 0.08)) no-repeat calc(100% - 3px) 4px / 3px calc(100% - 8px),
+    var(--ink);
+}
+.cmenu.has-scroll { padding-right: 6px; }
+
+/* a short, wide screen (a phone on its side, in a game): her quick menu in two columns, so it all
+   fits or nearly; her buttons on the left, her moves and modes on the right */
+@media (orientation: landscape) and (max-height: 560px) {
+  .qmenu {
+    width: min(640px, calc(100vw - 24px));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-content: start;
+  }
+  .qmenu__head, .qmenu__foot { grid-column: 1 / -1; }
+  .qmenu__big { grid-column: 1; grid-row: 2 / span 4; align-content: start; }
+  .qmenu__label, .qmenu__chips, .qmenu__modes { grid-column: 2; }
+  .qmenu__mode-text small { display: none; }
+  .qmenu__mode { padding-top: 9px; padding-bottom: 9px; min-height: 0; }
+}
+
+/* an app you uninstalled (laser.js, 1.10.0): its tile, then pixels */
+.capri-doomed {
+  position: fixed;
+  z-index: 24;
+  width: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 160ms steps(3, end), transform 160ms steps(3, end);
+}
+.capri-doomed.is-in { opacity: 1; transform: none; }
+.capri-doomed b {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--paper, #f2f1e8);
+  color: var(--ink, #13120d);
+  font: 700 30px/1 var(--font-display, sans-serif);
+  box-shadow: 3px 3px 0 var(--cyan, #00f0ff);
+}
+.capri-doomed span {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 11px/1.2 var(--font-mono, monospace);
+  color: var(--paper, #f2f1e8);
+  text-shadow: 0 1px 2px #000;
+}
+.capri-doomed.is-hit { animation: capri-disintegrate 820ms steps(8, end) forwards; }
+@keyframes capri-disintegrate {
+  0% { filter: none; clip-path: inset(0); }
+  15% { filter: brightness(2) hue-rotate(-30deg); transform: translateX(-4px); }
+  35% { clip-path: polygon(0 0, 100% 0, 100% 30%, 70% 30%, 70% 55%, 100% 55%, 100% 100%, 0 100%); transform: translateX(5px) skewX(-8deg); }
+  60% { clip-path: polygon(10% 10%, 60% 0, 90% 40%, 40% 50%, 80% 90%, 20% 100%); opacity: 0.7; filter: brightness(3) saturate(0); }
+  100% { clip-path: polygon(50% 50%, 50% 50%, 50% 50%); opacity: 0; transform: translateY(-20px) scale(1.3); }
+}
+@media (prefers-reduced-motion: reduce) { .capri-doomed.is-hit { animation: none; opacity: 0; } }
+
+/* (1.10.0) her twin (twin.js): a plain drawing of her beside her */
+.capri-twin {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 19;
+  pointer-events: auto;
+  touch-action: none;
+  will-change: transform;
+}
+.capri-twin.is-in { animation: twin-in 420ms steps(6, end); }
+.capri-twin.is-out { animation: twin-out 240ms steps(4, end) forwards; }
+@keyframes twin-in {
+  0% { opacity: 0; filter: drop-shadow(-6px 0 0 #00f05a) drop-shadow(6px 0 0 #ff2052); }
+  50% { opacity: 1; filter: drop-shadow(-3px 0 0 #00f05a) drop-shadow(3px 0 0 #ff2052); }
+  100% { opacity: 1; filter: none; }
+}
+@keyframes twin-out {
+  0% { opacity: 1; }
+  100% { opacity: 0; filter: drop-shadow(-6px 0 0 #00f05a) drop-shadow(6px 0 0 #ff2052); }
+}
+.twin-say {
+  position: fixed;
+  z-index: 26;
+  max-width: 220px;
+  padding: 7px 10px;
+  background: #0a0016;
+  color: #f2f1e8;
+  border: 1px solid #36ff7a;
+  font: 600 13px/1.3 var(--font-body, sans-serif);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .capri-twin.is-in, .capri-twin.is-out { animation: none; }
+}
+
+/* (1.11.8) under her chat answer: how much of its voice is made, then that she's speaking (chatvoice.js) */
+.capri-voice-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font: 600 11px/1.2 var(--mono, monospace);
+  letter-spacing: 0.06em;
+  color: var(--vc, var(--paper-3, #929188));
+  text-transform: uppercase;
+}
+/* (1.12.0, Emma: "un color cuando la genera Fish y otro cuando la genera local") which voice made it */
+.capri-voice-meter[data-src="fish"] { --vc: #00dfea; }
+.capri-voice-meter[data-src="qwen-mobile"] { --vc: #36ff7a; }
+.capri-voice-meter[data-src="clip"] { --vc: #f6ec00; }
+.capri-voice-meter[data-src="system"] { --vc: #cfcec5; }
+.capri-voice-meter[hidden] { display: none; }
+.capri-voice-meter .cvm-icon { font-size: 12px; }
+.capri-voice-meter .cvm-bar {
+  flex: 1;
+  max-width: 90px;
+  height: 4px;
+  background: color-mix(in srgb, var(--vc, #929188) 22%, transparent);
+  overflow: hidden;
+}
+.capri-voice-meter .cvm-bar[hidden] { display: none; }
+.capri-voice-meter .cvm-bar i {
+  display: block;
+  height: 100%;
+  width: 3%;
+  background: var(--vc, #929188);
+  transition: width 0.3s ease-out;
+}

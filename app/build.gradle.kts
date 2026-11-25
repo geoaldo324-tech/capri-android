@@ -1,0 +1,150 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "io.github.emmanuelquintana.capri"
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = "io.github.emmanuelquintana.capri"
+        minSdk = 26
+        targetSdk = 35
+        // Capri Android's own numbering (MAJOR.MINOR.PATCH), not the desktop's;
+        // versionCode = MAJOR*10000 + MINOR*100 + PATCH, always above the old 5xx builds
+        versionCode = 11300
+        versionName = "1.13.0"
+        // Emma's beta channel (.github/workflows/beta.yml, Beta.kt): -PcapriBeta=N makes "<version>-beta.N",
+        // same versionCode, so the release of that version later installs over it
+        (project.findProperty("capriBeta") as String?)?.let { versionName += "-beta.$it" }
+        // her service is only reachable from outside (adb, CI's screenshots) in debug builds
+        manifestPlaceholders["serviceExported"] = "false"
+    }
+
+    buildFeatures { buildConfig = true }
+
+    // dos versiones: «github» (la de siempre: APK, se actualiza sola desde GitHub Releases) y «play»
+    // (Google Play: AAB, sin autoactualizador ni instalar APKs, sin accesibilidad ni Termux, sin donar por PayPal, API 36)
+    flavorDimensions += "store"
+    productFlavors {
+        create("github") {
+            dimension = "store"
+            buildConfigField("boolean", "SELF_UPDATE", "true")
+            buildConfigField("boolean", "PEEK", "true")
+            buildConfigField("boolean", "DONATE", "true")
+        }
+        create("play") {
+            dimension = "store"
+            targetSdk = 36
+            buildConfigField("boolean", "SELF_UPDATE", "false")
+            buildConfigField("boolean", "PEEK", "false")
+            buildConfigField("boolean", "DONATE", "false")
+        }
+    }
+
+    // CI signs with a key from secrets when there is one (updates then install over each other);
+    // otherwise with the debug key, which is fine to sideload
+    val releaseKey = System.getenv("CAPRI_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKey != null) {
+            create("release") {
+                storeFile = releaseKey
+                storePassword = System.getenv("CAPRI_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("CAPRI_KEY_ALIAS")
+                keyPassword = System.getenv("CAPRI_KEY_PASSWORD")
+                // (1.10.1) "no pueden instalar en Huawei": the old signature too (v1, JAR), next to v2/v3.
+                // Some phones' installers and file managers (Huawei's among them) check only that one.
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            manifestPlaceholders["serviceExported"] = "true"
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName(if (releaseKey != null) "release" else "debug")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+        // (1.13.0, EXPERIMENTAL) LiteRT-LM's AAR (below) is built with a newer Kotlin: its
+        // classes carry metadata 2.3.0 and this project's Kotlin is 2.0.21. This flag lets the
+        // compiler read them anyway; if the build still refuses, upgrade the Kotlin plugin
+        // (root build.gradle.kts, 2.2+) instead — LiteRtBrain.kt is written against the
+        // documented 0.13.1 API either way.
+        freeCompilerArgs += listOf("-Xskip-metadata-version-check")
+    }
+
+    lint {
+        // the report is kept as a CI artifact; a warning doesn't stop the APK
+        abortOnError = false
+    }
+
+    packaging {
+        // (1.12.2) JNA's libraries for chips no Android 8+ phone has: 400 KB less to install
+        jniLibs.excludes += listOf("lib/armeabi/**", "lib/mips/**", "lib/mips64/**")
+        // (1.12.4) "el paquete parece no ser válido" on many phones: her libraries compressed again, as every
+        // installer knows them (the APK goes from 87 to about 55 MB, less to download and less to cut short)
+        jniLibs.useLegacyPackaging = true
+    }
+
+    androidResources {
+        // her pictures are already compressed (png, webp): stored as is, read straight from the APK
+        noCompress += listOf("png", "webp", "woff2")
+    }
+}
+
+// CHANGELOG.md (the repo's root) inside the APK too, with its translations (changelog/<lang>.md):
+// the app's What's new tab reads the one in its language
+abstract class CopyChangelog : DefaultTask() {
+    @get:InputFile abstract val source: RegularFileProperty
+    @get:InputDirectory abstract val translations: DirectoryProperty
+    @get:OutputDirectory abstract val out: DirectoryProperty
+
+    @TaskAction
+    fun run() {
+        source.get().asFile.copyTo(out.get().file("CHANGELOG.md").asFile, overwrite = true)
+        translations.get().asFile.listFiles { f -> f.name.endsWith(".md") }?.forEach {
+            it.copyTo(out.get().file("changelog/${it.name}").asFile, overwrite = true)
+        }
+    }
+}
+
+val copyChangelog = tasks.register<CopyChangelog>("copyChangelog") {
+    source.set(rootProject.layout.projectDirectory.file("CHANGELOG.md"))
+    translations.set(rootProject.layout.projectDirectory.dir("changelog"))
+}
+androidComponents {
+    onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(copyChangelog, CopyChangelog::out) }
+}
+
+// (1.12.0) her passive ears (WakeWord.kt): Vosk, a small offline speech model that listens for her name all the
+// time without the recognizer's beeps. Its models are downloaded by the app (one per language), not bundled.
+dependencies {
+    // (1.13.0, EXPERIMENTAL) LiteRT-LM (google-ai-edge/LiteRT-LM): a real AI model on this
+    // phone (LiteRtBrain.kt) — downloaded .litertlm models, no network to think. From Google
+    // Maven, as the official guide prescribes (developers.google.com/edge/litert-lm/android);
+    // 0.13.1 pinned (its API checked against the guide and the AAR itself). It brings its own
+    // kotlinx-coroutines and gson transitively. NOTE: its native libraries ship arm64-v8a and
+    // x86_64 only — on a 32-bit-only phone the model simply won't load (said in Su mente).
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
+    // (1.12.0) "Entrar con Google" for her account (Account.kt): Android's account picker
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+}

@@ -1,0 +1,198 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # attaching the APK to a release, on tags only
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # the runner image already has the Android SDK (ANDROID_HOME); Gradle fetches any missing platform
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # her page's own code, the parts that run outside the browser too
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check the Android page scripts parse
+        run: for f in app/src/main/assets/android/*.js app/src/main/assets/android/upstream/*.js; do node --check --input-type=module < "$f" || exit 1; done
+      # older Android WebViews drop oklch() colors (her panels lose their background): plain sRGB only
+      - name: Check her colors work on older phones
+        run: |
+          if grep -rn "oklch(" app/src/main/assets --include=*.css --include=*.html; then
+            echo "::error::oklch() found, run node tools/oklch.mjs on it"
+            exit 1
+          fi
+
+      # One signing key for every release, so each update installs over the last one.
+      # Either a whole key in secrets (CAPRI_KEYSTORE_BASE64 + passwords), or just a passphrase
+      # (CAPRI_SIGNING_PASSPHRASE): the first build on main makes the key, encrypts it with that
+      # passphrase into app/signing/capri.p12.enc and commits it; every build after decrypts it.
+      - name: Signing key
+        id: key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CAPRI_KEYSTORE_BASE64 }}
+          PASSPHRASE: ${{ secrets.CAPRI_SIGNING_PASSPHRASE }}
+          IS_MAIN: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          KS="$RUNNER_TEMP/capri.p12"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$KS"
+          elif [ -n "$PASSPHRASE" ]; then
+            ENC=app/signing/capri.p12.enc
+            if [ ! -f "$ENC" ]; then
+              if [ "$IS_MAIN" != "true" ]; then echo "no key yet (made on main only)"; exit 0; fi
+              keytool -genkeypair -keystore "$KS" -storetype PKCS12 -alias capri -keyalg RSA -keysize 4096 -validity 25000 \
+                -storepass:env PASSPHRASE -keypass:env PASSPHRASE -dname "CN=Capri para Android, O=emmanuelquintana"
+              mkdir -p app/signing
+              openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -in "$KS" -out "$ENC" -pass env:PASSPHRASE
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add "$ENC"
+              git commit -m "Signing: the release key, encrypted with the repo's passphrase secret"
+              git push origin HEAD:main
+            else
+              openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in "$ENC" -out "$KS" -pass env:PASSPHRASE
+            fi
+            echo "CAPRI_KEYSTORE_PASSWORD=$PASSPHRASE" >> "$GITHUB_ENV"
+            echo "CAPRI_KEY_PASSWORD=$PASSPHRASE" >> "$GITHUB_ENV"
+            echo "CAPRI_KEY_ALIAS=capri" >> "$GITHUB_ENV"
+          else
+            echo "no signing key in secrets: debug key, and no release"
+            exit 0
+          fi
+          echo "CAPRI_KEYSTORE=$KS" >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      # la huella pública de la clave (no es secreta): la pide Play Console para registrar el nombre de paquete
+      - name: Huella SHA-256 de la clave
+        if: steps.key.outputs.signed == 'true'
+        run: |
+          keytool -list -v -keystore "$CAPRI_KEYSTORE" -storetype PKCS12 -alias "$CAPRI_KEY_ALIAS" -storepass:env CAPRI_KEYSTORE_PASSWORD | grep -E 'SHA256:' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Build
+        env:
+          KEY_PASSWORD_SECRET: ${{ secrets.CAPRI_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.CAPRI_KEY_ALIAS }}
+          KEY_PASS_SECRET: ${{ secrets.CAPRI_KEY_PASSWORD }}
+        run: |
+          [ -n "$KEY_PASSWORD_SECRET" ] && export CAPRI_KEYSTORE_PASSWORD="$KEY_PASSWORD_SECRET" CAPRI_KEY_ALIAS="$KEY_ALIAS_SECRET" CAPRI_KEY_PASSWORD="$KEY_PASS_SECRET"
+          ./gradlew --no-daemon assembleGithubRelease lintGithubRelease bundlePlayRelease
+
+      - name: La versión de Play sin lo que la tienda no permite
+        run: |
+          m=$(find app/build/intermediates -path '*playRelease*' -name AndroidManifest.xml | grep -i merged | head -1)
+          echo "$m"; grep -E 'uses-permission|targetSdk' "$m"
+          if grep -E 'REQUEST_INSTALL_PACKAGES|com\.termux|PeekService|ControlService|ApkProvider|InstallResult' "$m"; then
+            echo "::error::La versión de Play todavía trae algo que Google Play no acepta"; exit 1
+          fi
+
+      - name: Name the APK
+        id: apk
+        run: |
+          v=$(grep -o 'versionName = "[^"]*"' app/build.gradle.kts | cut -d'"' -f2)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          cp app/build/outputs/apk/github/release/app-github-release.apk "Capri-Android-$v.apk"
+          # la de Google Play (AAB, firmada con nuestra clave como clave de subida): solo como artefacto, se sube a mano en Play Console
+          cp app/build/outputs/bundle/playRelease/app-play-release.aab "Capri-Play-$v.aab"
+
+      # (1.11.8) one APK for every phone: 64-bit (her neural voice) and 32-bit (armeabi-v7a, x86: her phrases
+      # and the phone's voice). 1.11.0–1.11.7 only had 64-bit libraries and didn't install on 32-bit phones.
+      - name: Check it installs on 32-bit phones too
+        run: |
+          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+            unzip -l Capri-Android-*.apk | grep -q " lib/$abi/" || { echo "::error::falta lib/$abi en el APK"; exit 1; }
+          done
+          # (1.12.0) her passive ears (WakeWord.kt) need libvosk on every phone
+          for abi in arm64-v8a armeabi-v7a; do
+            unzip -l Capri-Android-*.apk | grep -q " lib/$abi/libvosk.so" || { echo "::error::falta libvosk.so en lib/$abi"; exit 1; }
+          done
+
+      # (1.12.4) "el paquete parece no ser válido": the APK whole, its libraries compressed (as every phone's
+      # installer knows them) and its size, so a jump like 1.12.0's (42 → 87 MB) is seen
+      - name: Check the APK is whole and light
+        run: |
+          unzip -tq Capri-Android-*.apk
+          if unzip -v Capri-Android-*.apk | grep -E " lib/.*\.so$" | grep -q " Stored "; then
+            echo "::error::hay librerías sin comprimir en el APK"; exit 1
+          fi
+          echo "Tamaño del APK: $(( $(stat -c%s Capri-Android-*.apk) / 1048576 )) MB"
+
+      # (1.12.0) the small speech models her passive ears download (WakeWord.Models): each address still answers
+      - name: Check the passive ears' models are reachable
+        continue-on-error: true
+        run: |
+          for m in $(grep -o 'vosk-model-small-[a-z0-9.-]*' app/src/main/java/io/github/emmanuelquintana/capri/WakeWord.kt | sort -u); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -I -L "https://alphacephei.com/vosk/models/$m.zip")
+            [ "$code" = "200" ] && echo "ok $m" || echo "::warning::$m.zip answered $code"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Capri-Android
+          path: Capri-Android-*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Capri-Play
+          path: Capri-Play-*.aab
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-githubRelease.html
+          if-no-files-found: ignore
+
+      # what this version brings: its section of CHANGELOG.md (required for a release)
+      - name: Novedades
+        id: notes
+        env:
+          VERSION: ${{ steps.apk.outputs.version }}
+        run: |
+          awk -v v="## $VERSION" '$0 == v {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md | sed -e '/./,$!d' > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "::error::CHANGELOG.md no tiene un apartado '## $VERSION': cada versión explica qué cambia"
+            [ "$GITHUB_REF" = "refs/heads/main" ] && exit 1
+          fi
+          # the same notes in the app's other languages (changelog/<lang>.md): the app shows those
+          for f in changelog/*.md; do
+            grep -qx "## $VERSION" "$f" || echo "::warning::$f no tiene el apartado '## $VERSION': en ese idioma la app mostrará las notas en español"
+          done
+          {
+            echo
+            echo "---"
+            echo "**Instalar:** descarga \`Capri-Android-$VERSION.apk\` en tu teléfono y ábrelo. Si ya tienes Capri, actualízala desde la app (placa *Actualizaciones*), sin desinstalar."
+            echo
+            echo "Gratis, nunca a la venta (PolyForm Noncommercial 1.0.0, ver LICENSE)."
+          } >> "$RUNNER_TEMP/notes.md"
+          echo "file=$RUNNER_TEMP/notes.md" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/notes.md"
+
+      # every build of main is published as the release of its version (a direct download link),
+      # only when signed with the release key: the app updates itself from these
+      - name: Publicar la versión
+        if: steps.key.outputs.signed == 'true' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.apk.outputs.version }}
+          name: Capri para Android ${{ steps.apk.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body_path: ${{ steps.notes.outputs.file }}
+          files: Capri-Android-*.apk
