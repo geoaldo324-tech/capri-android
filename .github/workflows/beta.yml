@@ -73,9 +73,7 @@ jobs:
 
       - name: Compilar
         if: steps.code.outputs.ok == 'true'
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon assembleRelease -PcapriBeta=${{ github.run_number }}
+        run: ./gradlew --no-daemon assembleRelease -PcapriBeta=${{ github.run_number }}
 
       # signed with the release key, or it would never install over her Capri
       - name: Comprobar la firma

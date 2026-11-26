@@ -67,6 +67,10 @@ class WakeWord(private val context: Context, private val onHeard: (String) -> Un
      *  note, another app recording. Below Android 10 two apps can't record at once (theirs would fail), so hers lets go. */
     fun othersNeedMic(): Boolean {
         val audio = context.getSystemService(android.media.AudioManager::class.java) ?: return false
+        // (1.13.1) her call (CallActivity) puts the phone in communication mode herself: that
+        // mode is hers, not someone else needing the mic. A real phone call (MODE_IN_CALL)
+        // still takes it from her.
+        if (Ears.callLive && audio.mode != android.media.AudioManager.MODE_IN_CALL) return false
         if (audio.mode != android.media.AudioManager.MODE_NORMAL) return true
         if (android.os.Build.VERSION.SDK_INT < 29) {
             val mine = if (thread?.isAlive == true) 1 else 0

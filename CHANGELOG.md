@@ -3,17 +3,6 @@
 Cada versión, lo nuevo primero. El apartado de cada versión es el texto que se ve en su página de
 *Releases* y en el aviso de actualización de la app.
 
-## 1.13.0
-
-- Nueva pestaña «Su mente» con mapa de neuronas.
-- Cerebro local «Sin internet».
-- «Enseñarle un texto».
-- «Platicar con otra IA».
-- Botón «Ella actúa sola».
-- Cámara a petición.
-- Cerebros locales descargables.
-- Punto de restauración «Regresar como estaba».
-
 ## 1.12.4
 
 - **🛠️ Errores corregidos**

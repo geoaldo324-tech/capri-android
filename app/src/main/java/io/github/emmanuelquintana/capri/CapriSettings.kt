@@ -222,24 +222,66 @@ object CapriSettings {
         store.write(Store.MEMORY, mem.toString())
     }
 
+    /** (1.14.0) What must never become a memory: a password, a key, a token, a card number.
+     *  Checked everywhere a fact can enter (a text you teach her, the map's new memory, an
+     *  edit) on this side, and in host.js/memory.js on her page's side. Raw strings: the
+     *  patterns carry their own backslashes. */
+    private val SECRET_WORD = Regex("""contraseñ|password|passwd|api[ -]?key|clave de|token|cvv|tarjeta de""", RegexOption.IGNORE_CASE)
+    private val SECRET_NUM = Regex("""\d[\d ]{11,}\d""")
+    fun looksSecret(text: String): Boolean = SECRET_WORD.containsMatchIn(text) || SECRET_NUM.containsMatchIn(text)
+
     /** (1.12.5) «Enseñarle un texto» (Su mente): paragraphs of a file of yours, kept as things she
      *  remembers — the same facts her AI is told and her brain on this phone quotes. To her page if
      *  she's on (it owns her memory while it lives), else straight into memory.json, like forget(). */
     fun teach(context: Context, learned: List<String>) {
-        if (learned.isEmpty()) return
+        val clean = learned.filter { !looksSecret(it) } // (1.14.0) secrets never become memories
+        if (clean.isEmpty()) return
         val service = CapriService.current
         if (service != null && service.pageReady) {
-            service.overlay?.emit("settings:apply", JSONObject().put("teachFacts", org.json.JSONArray(learned)).toString())
+            service.overlay?.emit("settings:apply", JSONObject().put("teachFacts", org.json.JSONArray(clean)).toString())
             return
         }
         val store = Store(context)
         val mem = runCatching { JSONObject(store.read(Store.MEMORY) ?: "{}") }.getOrElse { JSONObject() }
         val arr = mem.optJSONArray("facts")
         val known = if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { arr.optString(it).ifEmpty { null } }
-        val merged = (known + learned.filter { it !in known }).take(60) // (memory.js: at most 60 facts)
+        val merged = (known + clean.filter { it !in known }).take(60) // (memory.js: at most 60 facts)
         mem.put("facts", org.json.JSONArray(merged))
         store.write(Store.MEMORY, mem.toString())
     }
+
+    /** (1.14.0) One of her memories, rewritten where it stands (the map in Su mente, tapped):
+     *  the same road as forget() — to her page if she's on, else into memory.json — keeping
+     *  its place in the list. False when the new text is empty, looks like a secret, or the
+     *  old memory isn't there anymore. */
+    fun editFact(context: Context, from: String, to: String): Boolean {
+        val clean = to.trim().replace(Regex("\\s+"), " ").take(160)
+        if (clean.isEmpty() || looksSecret(clean)) return false
+        val service = CapriService.current
+        if (service != null && service.pageReady) {
+            service.overlay?.emit("settings:apply", JSONObject().put("editFact", JSONObject().put("from", from).put("to", clean)).toString())
+            return true
+        }
+        val store = Store(context)
+        val mem = runCatching { JSONObject(store.read(Store.MEMORY) ?: "{}") }.getOrElse { JSONObject() }
+        val arr = mem.optJSONArray("facts") ?: return false
+        val out = org.json.JSONArray()
+        var done = false
+        for (i in 0 until arr.length()) {
+            val f = arr.optString(i)
+            if (!done && f == from) { out.put(clean); done = true } else out.put(f)
+        }
+        if (!done) return false
+        mem.put("facts", out)
+        store.write(Store.MEMORY, mem.toString())
+        return true
+    }
+
+    /** (1.14.0) Her whole memory as it is kept (memory.json), readable, for the memory
+     *  manager's export in Su mente: to save it or send it wherever you want. */
+    fun exportMemory(context: Context): String = runCatching {
+        JSONObject(Store(context).read(Store.MEMORY) ?: "{}").toString(2)
+    }.getOrDefault("{}")
 
     /** Something only she can do right now (look at your screen): false if she isn't on. */
     fun tell(live: JSONObject): Boolean {

@@ -246,6 +246,48 @@ class Ears(private val service: CapriService) {
         }
     }
 
+    // ---- (1.13.1) her call (CallActivity): a voice talk inside the app, on its own screen ----
+    // While it lasts she listens the whole time and there's NO name to wait for: everything you
+    // say is for her, and it goes the way of her app chat (AppChat.ask), which answers out loud
+    // too (chatvoice.js). Outside the call nothing changes: her name is still the way to call
+    // her, and her ears still only open with her voice switched on. The mic is only open while
+    // the call is (plus her usual listening, if you turned that on).
+    @Volatile var inCall = false
+        private set
+    @Volatile var callMuted = false
+        private set
+    /** Her call screen follows along: "listening", "thinking", "speaking", "muted". */
+    @Volatile var callState: ((String) -> Unit)? = null
+    /** Her call screen shows what you just said, as she hears it. */
+    @Volatile var callHeard: ((String) -> Unit)? = null
+
+    /** Her call starts or ends. Ending it stops whatever she's saying, at once. */
+    fun call(on: Boolean) = main.post {
+        if (inCall == on) return@post
+        inCall = on
+        callLive = on
+        callMuted = false
+        service.overlay?.emit("capri:call", JSONObject().put("on", on).toString()) // (her page marks the call's lines in your history: chatlog.js)
+        if (!on) hushVoice()
+        update()
+        if (on) callState?.invoke("listening")
+    }
+
+    /** The call's mute: the mic really closes (her passive ears and the recognizer both stop). */
+    fun callMute(muted: Boolean) = main.post {
+        if (!inCall || callMuted == muted) return@post
+        callMuted = muted
+        if (muted) {
+            passive.stop()
+            recognizer?.let { runCatching { it.cancel() } }
+            listening = false
+            callState?.invoke("muted")
+        } else {
+            callState?.invoke("listening")
+            next(0)
+        }
+    }
+
     /** Switched on or off, the screen on or off, the mic allowed or not: listening or not. */
     /** (1.12.0) Her passive ears again from scratch (only your voice was turned on or off). */
     fun restartPassive() = main.post {
@@ -257,9 +299,9 @@ class Ears(private val service: CapriService) {
 
     fun update() = main.post {
         val pm = service.getSystemService(PowerManager::class.java)!!
-        val should = enabled(service) && allowed(service) && pm.isInteractive && SpeechRecognizer.isRecognitionAvailable(service) && !CapriService.gamer && !CapriService.saving && !held
+        val should = (enabled(service) || inCall) && allowed(service) && pm.isInteractive && SpeechRecognizer.isRecognitionAvailable(service) && !CapriService.gamer && !CapriService.saving && !held
         status = when {
-            !enabled(service) -> ""
+            !enabled(service) && !inCall -> ""
             !allowed(service) -> "nomic"
             !SpeechRecognizer.isRecognitionAvailable(service) -> "norecognizer"
             !pm.isInteractive -> "screenoff"
@@ -306,9 +348,11 @@ class Ears(private val service: CapriService) {
 
     private fun start() {
         if (!wanted || speaking || listening) return
-        // a call, a voice note, another app recording: the mic is theirs
+        if (inCall && callMuted) return // (1.13.1) her call, muted: the mic stays closed
+        // a call, a voice note, another app recording: the mic is theirs — unless the "call" is
+        // hers (1.13.1: her call screen puts the phone in communication mode herself)
         val audio = service.getSystemService(AudioManager::class.java)!!
-        if (audio.mode != AudioManager.MODE_NORMAL || (!passive.on && passive.othersNeedMic())) {
+        if ((audio.mode != AudioManager.MODE_NORMAL && !inCall) || (!passive.on && passive.othersNeedMic())) {
             status = "busy"
             passive.stop()
             return next(5000)
@@ -563,6 +607,20 @@ class Ears(private val service: CapriService) {
     }
 
     private fun heard(options: List<String>, scores: FloatArray? = null) {
+        // (1.13.1) in her call there's no name to wait for and no noise filter: everything heard
+        // is for her, as if you'd written it in her app chat (AppChat.ask — its answers are said
+        // out loud by chatvoice.js, and kept in your chat history like any other). While she
+        // herself is speaking it isn't an order: her ears are shut then anyway (her voice
+        // cancels the recognizer and stops her passive ears), this is for what's left over.
+        if (inCall) {
+            if (!speaking && !callMuted) options.firstOrNull { it.isNotBlank() }?.let { said ->
+                status = "heard"
+                callHeard?.invoke(said.trim())
+                callState?.invoke("thinking")
+                AppChat.ask(service, said.trim())
+            }
+            return
+        }
         val now = System.currentTimeMillis()
         val plain = options.map { plain(it) }
         // her noise filter (the app's Settings › Her ears): stricter, she only answers to her name
@@ -636,6 +694,13 @@ class Ears(private val service: CapriService) {
         val ev = JSONObject().put("id", id).put("state", state).apply(extra)
         if (BuildConfig.DEBUG && state != "VOICE_PROGRESS") android.util.Log.i("CapriVoiceEvent", ev.toString()) // (VoiceSelfTest reads these)
         service.overlay?.emit("voice:event", ev.toString())
+        // (1.13.1) her call screen follows her voice: making it, saying it, done (her ears open again)
+        if (inCall) when (state) {
+            "VOICE_REQUESTED", "VOICE_PREPARING" -> callState?.invoke("thinking")
+            "VOICE_READY", "VOICE_STARTED" -> callState?.invoke("speaking")
+            "VOICE_FINISHED", "VOICE_CANCELLED", "VOICE_ERROR", "VOICE_UNAVAILABLE" ->
+                callState?.invoke(if (callMuted) "muted" else "listening")
+        }
         // (1.11.8) the app's Chat tab shows how her voice for each answer goes (its percentage)
         runCatching { voiceListener?.invoke(ev) }
     }
@@ -1088,6 +1153,10 @@ class Ears(private val service: CapriService) {
     companion object {
         /** (1.11.8) Every voice event, on the main thread (the app's Chat tab follows its answers' voice with it). */
         @Volatile var voiceListener: ((JSONObject) -> Unit)? = null
+        /** (1.13.1) Her call is live (CallActivity): the communication mode the phone is in is
+         *  hers, not another app's — her passive ears check this before giving the mic away. */
+        @Volatile var callLive = false
+            internal set
         // her name as recognizers write it: Capri, Kapri, Capry, Cabri, Caprí, Capris… (Капри in Russian,
         // カプリ in Japanese, "ca pri" as Vietnamese can split it)
         // (1.12.0, community: "muitas vezes ela não reconhece a palavra Capri… que responda por capi, cabri, cabi")

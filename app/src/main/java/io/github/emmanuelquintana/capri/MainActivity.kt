@@ -454,6 +454,17 @@ class MainActivity : Activity() {
     private var mindView: MindView? = null
     private var mindCounts: TextView? = null
     private var mindBrain: TextView? = null
+    // (1.14.0) her simulated mood under her neurons, the facts her map last showed, the memory
+    // manager's box, her personality sliders' redraws, her console and the duplicate finder
+    private var mindMood: TextView? = null
+    private var mindFacts: List<String> = emptyList()
+    private var memBox: LinearLayout? = null
+    private var shownMindFacts: List<String>? = null
+    private val personaDraws = ArrayList<() -> Unit>()
+    private val consoleLines = ArrayList<String>()
+    private var consoleOut: TextView? = null
+    private var dupTree: android.net.Uri? = null
+    private var dupState: TextView? = null
     private var mindDraw: () -> Unit = {}
     // (1.13.0) Su mente's new cards redraw together: her models on this phone, her guest, her
     // restore points, her acting alone
@@ -559,6 +570,279 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /** (1.14.0) One of her personality sliders (Su mente): its name, its number, its bar. The
+     *  number follows the finger; the value is saved when the finger lifts, by the road every
+     *  setting of hers takes (CapriSettings). */
+    private fun personaSlider(label: Int, key: String, default: Int): View {
+        val col = ui.col()
+        val value = ui.text("", 13f, Hud.YELLOW, ui.mono)
+        val row = ui.row()
+        row.addView(ui.text(getString(label), 14f, Hud.PAPER, ui.head), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        row.addView(value)
+        col.addView(row)
+        val bar = android.widget.SeekBar(this).apply {
+            max = 100
+            progressTintList = android.content.res.ColorStateList.valueOf(Hud.YELLOW)
+            thumbTintList = android.content.res.ColorStateList.valueOf(Hud.YELLOW)
+        }
+        val draw = {
+            val v = Store(this).configNumber(key, default.toDouble()).toInt().coerceIn(0, 100)
+            if (bar.progress != v) bar.progress = v
+            value.text = v.toString()
+        }
+        bar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(b: android.widget.SeekBar?, p: Int, fromUser: Boolean) { if (fromUser) value.text = p.toString() }
+            override fun onStartTrackingTouch(b: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(b: android.widget.SeekBar?) { CapriSettings.set(this@MainActivity, key, b?.progress ?: default) }
+        })
+        draw()
+        personaDraws += draw
+        choices.add(draw)
+        col.addView(bar, ui.block(2))
+        return col
+    }
+
+    /** (1.14.0) A neuron, tapped: the memory it is — read it here, edit it, or forget it.
+     *  Everything goes through CapriSettings (forget/editFact): the same memory her manager
+     *  shows and her page keeps, never a second one for the map. */
+    private fun showFactDialog(fact: String) {
+        val body = ui.text(fact, 14f, Hud.PAPER, ui.body).apply {
+            setPadding(ui.dpi(20), ui.dpi(16), ui.dpi(20), ui.dpi(8))
+            setTextIsSelectable(true)
+            setLineSpacing(0f, 1.2f)
+        }
+        android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(R.string.mind_fact_title)
+            .setView(body)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNeutralButton(R.string.mind_fact_edit) { _, _ -> editFactDialog(fact) { refresh() } }
+            .setNegativeButton(R.string.mind_fact_forget) { _, _ ->
+                android.app.AlertDialog.Builder(this).setMessage(R.string.mind_fact_forget_sure)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(R.string.mind_fact_forget) { _, _ ->
+                        CapriSettings.forget(this, fact)
+                        Toast.makeText(this, R.string.settings_memory_forgot, Toast.LENGTH_SHORT).show()
+                        refresh()
+                    }.show()
+            }
+            .show()
+    }
+
+    /** (1.14.0) Write a memory of hers: a new one (current = null, from the map's button), or
+     *  one being edited. Secrets are refused with a word (CapriSettings.looksSecret), and a
+     *  new memory asks for her memory to be on, like everything that adds one. */
+    private fun editFactDialog(current: String?, done: () -> Unit) {
+        val field = android.widget.EditText(this).apply {
+            setText(current ?: "")
+            hint = getString(R.string.mind_fact_hint)
+            setSelection(text.length)
+        }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(48, 16, 48, 0); addView(field) }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(if (current == null) R.string.mind_fact_new else R.string.mind_fact_edit)
+            .setView(box)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.mind_fact_save) { _, _ ->
+                val text = field.text.toString().trim()
+                if (text.isEmpty()) return@setPositiveButton
+                if (CapriSettings.looksSecret(text)) {
+                    Toast.makeText(this, R.string.mem_secret_no, Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                if (current == null) {
+                    if (!Store(this).configFlag("longMemory", true)) {
+                        Toast.makeText(this, R.string.mind_memory_off, Toast.LENGTH_LONG).show()
+                        return@setPositiveButton
+                    }
+                    CapriSettings.teach(this, listOf(text))
+                } else if (!CapriSettings.editFact(this, current, text)) {
+                    Toast.makeText(this, R.string.mem_secret_no, Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                done()
+            }
+            .show()
+    }
+
+    /** (1.14.0) Su mente's memory manager list: her facts, each with its ✕ — the same facts
+     *  and the same forget as Ajustes personales' list (showMemory), drawn for this tab. */
+    private fun memDraw() {
+        val box = memBox ?: return
+        val facts = CapriSettings.facts(this)
+        if (facts == shownMindFacts) return
+        shownMindFacts = facts
+        box.removeAllViews()
+        if (facts.isEmpty()) {
+            box.addView(ui.text(getString(R.string.settings_memory_none), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) })
+            return
+        }
+        val later = { box.postDelayed({ shownMindFacts = null; memDraw() }, 500) } // her page saves it first
+        for (fact in facts) {
+            val row = ui.row()
+            row.addView(ui.text("• $fact", 13f, Hud.PAPER, ui.body).apply { setLineSpacing(0f, 1.15f) }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            row.addView(ui.text("✕", 15f, Hud.RED, ui.mono).apply {
+                setPadding(ui.dpi(14), ui.dpi(6), ui.dpi(4), ui.dpi(6))
+                contentDescription = getString(R.string.settings_memory_forget_one)
+                setOnClickListener {
+                    CapriSettings.forget(this@MainActivity, fact)
+                    row.alpha = 0.3f
+                    later()
+                }
+            })
+            box.addView(row, ui.block(6))
+        }
+    }
+
+    // ---------- (1.14.0) her console (Su mente) ----------
+
+    private fun consoleSay(line: String) {
+        consoleLines += line
+        while (consoleLines.size > 80) consoleLines.removeAt(0)
+        consoleOut?.text = consoleLines.joinToString("\n")
+    }
+
+    /**
+     * The console's whole vocabulary: ayuda, diagnostico, ia <proveedor>, limpiar_cache and,
+     * with its bridge on, termux <comando>. Anything else is answered as unknown. No text
+     * typed here is ever run as code; each command is one of these, defined here.
+     */
+    private fun runConsole(raw: String) {
+        val text = raw.trim()
+        if (text.isEmpty()) return
+        consoleSay("> $text")
+        val word = text.lowercase().split(Regex("\\s+")).first()
+        val rest = text.substring(word.length).trim()
+        when (word) {
+            "ayuda", "help" -> consoleSay(getString(R.string.console_help))
+            "diagnostico", "diagnóstico" -> consoleSay(DiagReport.build(this))
+            "ia" -> consoleBrain(rest.lowercase())
+            "limpiar_cache" -> {
+                consoleSay(getString(R.string.console_cache_working))
+                Threads.make {
+                    val freed = clearAppCache()
+                    runOnUiThread { consoleSay(getString(R.string.console_cache_done, sizeText(freed))) }
+                }.start()
+            }
+            "termux" -> consoleTermux(rest)
+            else -> consoleSay(getString(R.string.console_unknown))
+        }
+    }
+
+    /** «ia <proveedor>»: her brain changes by the roads she already has (CapriSettings) —
+     *  each of them keeps a restore point before changing anything (RestorePoints). */
+    private fun consoleBrain(want: String) {
+        if (want.isEmpty()) { consoleSay(getString(R.string.console_ia_how)); return }
+        val keyed = CapriSettings.KEYED.firstOrNull { it.id == want || it.name.lowercase() == want }
+        when {
+            keyed != null -> {
+                if (!CapriSettings.hasKey(this, keyed.id)) { consoleSay(getString(R.string.console_ia_nokey, keyed.name)); return }
+                CapriSettings.useSaved(this, keyed.id)
+                consoleSay(getString(R.string.console_ia_ok, keyed.name))
+            }
+            want in listOf("pollinations", "gratis", "free") -> {
+                CapriSettings.setAi(this, "pollinations")
+                consoleSay(getString(R.string.console_ia_ok, getString(R.string.main_ai_free)))
+            }
+            want in listOf("ollama", "pc") -> {
+                if (CapriSettings.ollamaHost(this).isEmpty()) { consoleSay(getString(R.string.console_ia_how)); return }
+                consoleSay(getString(R.string.console_ia_working))
+                Thread {
+                    val why = CapriSettings.setAi(this, "ollama", address = CapriSettings.ollamaHost(this))
+                    runOnUiThread {
+                        consoleSay(if (why == null) getString(R.string.console_ia_ok, getString(R.string.main_ai_pc))
+                            else getString(R.string.console_ia_bad, why))
+                    }
+                }.start()
+            }
+            want in listOf("local", "frases") -> {
+                CapriSettings.set(this, "provider", "local")
+                consoleSay(getString(R.string.console_ia_ok, getString(R.string.main_ai_local)))
+            }
+            want in listOf("litert", "telefono", "teléfono") -> {
+                val m = LiteRtBrain.active(this)
+                if (m == null) { consoleSay(getString(R.string.console_ia_nolitert)); return }
+                CapriSettings.set(this, "provider", "litert")
+                consoleSay(getString(R.string.console_ia_ok, getString(R.string.ai_litert) + " · " + m.name))
+            }
+            else -> consoleSay(getString(R.string.console_ia_how))
+        }
+    }
+
+    /** «termux <comando>»: only with its bridge on (Ajustes › Teléfono), and the exact
+     *  command is always shown first — the yes in its dialog is what sends it (TermuxBridge). */
+    private fun consoleTermux(command: String) {
+        if (!Store(this).configFlag("termuxBridge", false)) { consoleSay(getString(R.string.console_termux_off)); return }
+        if (command.isEmpty()) { consoleSay(getString(R.string.console_termux_how)); return }
+        if (!TermuxBridge.installed(this)) { consoleSay(getString(R.string.termux_not_installed)); return }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.console_termux_title)
+            .setMessage(command)
+            .setNegativeButton(android.R.string.cancel) { _, _ -> consoleSay(getString(R.string.console_termux_no)) }
+            .setPositiveButton(R.string.console_termux_go) { _, _ ->
+                val sent = TermuxBridge.run(this, command)
+                consoleSay(getString(if (sent) R.string.console_termux_sent else R.string.console_termux_failed))
+            }
+            .show()
+    }
+
+    /** «limpiar_cache»: her cache folders emptied (the WebView's cache lives in cacheDir
+     *  too). How many bytes went. Blocking: called off the main thread. */
+    private fun clearAppCache(): Long {
+        fun size(f: java.io.File): Long = if (f.isDirectory) f.listFiles()?.sumOf { size(it) } ?: 0 else f.length()
+        fun wipe(f: java.io.File) { f.listFiles()?.forEach { runCatching { it.deleteRecursively() } } }
+        val before = size(cacheDir) + size(codeCacheDir)
+        wipe(cacheDir)
+        wipe(codeCacheDir)
+        return (before - size(cacheDir) - size(codeCacheDir)).coerceAtLeast(0)
+    }
+
+    // ---------- (1.14.0) the duplicate finder (Su mente) ----------
+
+    private fun pickFolderForDups() = runCatching {
+        @Suppress("DEPRECATION")
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_FOLDER)
+    }
+
+    private fun scanDups(tree: android.net.Uri) {
+        dupState?.text = getString(R.string.dup_scanning)
+        Threads.make {
+            val groups = Duplicates.scan(this, tree)
+            runOnUiThread { showDupGroups(tree, groups) }
+        }.start()
+    }
+
+    /** The groups, what deleting the extra copies gives back — and the deletion itself,
+     *  only from this dialog's button (the first copy of each group always stays). */
+    private fun showDupGroups(tree: android.net.Uri, groups: List<Duplicates.Group>) {
+        if (groups.isEmpty()) {
+            dupState?.text = getString(R.string.dup_none)
+            Toast.makeText(this, R.string.dup_none, Toast.LENGTH_LONG).show()
+            return
+        }
+        val wasted = groups.sumOf { it.wasted }
+        val extras = groups.sumOf { it.extra.size }
+        dupState?.text = getString(R.string.dup_found, groups.size, extras, sizeText(wasted))
+        val lines = groups.joinToString("\n") { g -> getString(R.string.dup_group, g.keep.name, g.extra.size + 1, sizeText(g.wasted)) }
+        val body = ui.text(lines, 13f, Hud.PAPER_2, ui.mono).apply {
+            setPadding(ui.dpi(20), ui.dpi(16), ui.dpi(20), ui.dpi(8))
+            setTextIsSelectable(true)
+        }
+        android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(R.string.dup_head)
+            .setView(ScrollView(this).apply { setBackgroundColor(Hud.INK); addView(body) })
+            .setPositiveButton(android.R.string.ok, null)
+            .setNegativeButton(getString(R.string.dup_delete, extras, sizeText(wasted))) { _, _ ->
+                Threads.make {
+                    val gone = Duplicates.deleteExtras(this, tree, groups)
+                    runOnUiThread {
+                        dupState?.text = getString(R.string.dup_deleted, gone)
+                        Toast.makeText(this, getString(R.string.dup_deleted, gone), Toast.LENGTH_LONG).show()
+                    }
+                }.start()
+            }
+            .show()
+    }
+
     private fun mindPage() = page {
         // header: her face in a cut frame, the project line in cyan, her name in yellow
         val header = ui.row()
@@ -615,9 +899,19 @@ class MainActivity : Activity() {
             addView(ui.label(getString(R.string.mind_map_head), Hud.CYAN))
             val net = MindView(this@MainActivity)
             mindView = net
+            // (1.14.0) each bright node is one of her memories: tap it and the memory itself
+            // opens (read it, edit it, forget it — CapriSettings, the road her memory takes)
+            net.onTapFact = { i -> mindFacts.getOrNull(i)?.let { showFactDialog(it) } }
             addView(net, LinearLayout.LayoutParams(MATCH_PARENT, ui.dpi(190)))
+            addView(ui.text(getString(R.string.mind_map_how), 12f, Hud.PAPER_3, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(6))
             mindCounts = ui.text("", 13f, Hud.PAPER_2, ui.mono).apply { letterSpacing = 0.04f }
             addView(mindCounts, ui.block(8))
+            // (1.14.0) her simulated mood, next to her neurons: a software state, not feelings
+            mindMood = ui.text("", 13f, Hud.CYAN, ui.mono).apply { letterSpacing = 0.04f }
+            addView(mindMood, ui.block(4))
+            addView(ui.button(getString(R.string.mind_fact_new) + " +", Ui.Kind.LINE) {
+                editFactDialog(null) { refresh() }
+            }, ui.block(10))
         }, ui.block(16))
         // her brain: her neural voice's state, and who answers her chat (this phone's brain too)
         addView(ui.card(Hud.MANE, Hud.CYAN).apply {
@@ -625,11 +919,70 @@ class MainActivity : Activity() {
             mindBrain = ui.text("", 14f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.2f) }
             addView(mindBrain, ui.block(6))
         }, ui.block(16))
+        // (1.14.0) her adjustable personality: six sliders that only lean her tone (persona.js
+        // puts them into her prompt as a brief guide; her personality and her lines are not
+        // rewritten). At their defaults she is as she has always been; the switch turns the
+        // whole adjustment off. Her simulated mood's switch lives here too, with its tone
+        addView(ui.card(Hud.MANE).apply {
+            addView(ui.label(getString(R.string.persona_head), Hud.MANE))
+            addView(ui.text(getString(R.string.persona_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(6))
+            addView(choice(listOf(R.string.off to false, R.string.on to true),
+                { Store(this@MainActivity).configFlag("personaOn", true) }, { a, b -> a == b }) { CapriSettings.set(this@MainActivity, "personaOn", it) }, ui.block(8))
+            for ((label, key, default) in listOf(
+                Triple(R.string.persona_warmth, "personaWarmth", 70),
+                Triple(R.string.persona_curiosity, "personaCuriosity", 65),
+                Triple(R.string.persona_creativity, "personaCreativity", 60),
+                Triple(R.string.persona_formality, "personaFormality", 30),
+                Triple(R.string.persona_humor, "personaHumor", 45),
+                Triple(R.string.persona_initiative, "personaInitiative", 50),
+            )) addView(personaSlider(label, key, default), ui.block(8))
+            addView(ui.button(getString(R.string.persona_reset), Ui.Kind.LINE) {
+                for ((key, default) in listOf("personaWarmth" to 70, "personaCuriosity" to 65, "personaCreativity" to 60, "personaFormality" to 30, "personaHumor" to 45, "personaInitiative" to 50))
+                    CapriSettings.set(this@MainActivity, key, default)
+                val redraw = { personaDraws.forEach { it() } }
+                redraw()
+                postDelayed(redraw, 500) // (her page may save it first, like her memories)
+            }, ui.block(10))
+            addView(ui.text(getString(R.string.mood_head), 14f, Hud.PAPER, ui.head), ui.block(14))
+            addView(ui.text(getString(R.string.mood_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(4))
+            addView(choice(listOf(R.string.off to false, R.string.on to true),
+                { Store(this@MainActivity).configFlag("moodSimOn", true) }, { a, b -> a == b }) { CapriSettings.set(this@MainActivity, "moodSimOn", it) }, ui.block(8))
+        }, ui.block(16))
         // teach her a text: a file of yours becomes things she remembers, quotable in any chat
         addView(ui.card(Hud.YELLOW).apply {
             addView(ui.label(getString(R.string.teach_title)))
             addView(ui.text(getString(R.string.teach_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(6))
             addView(ui.button(getString(R.string.teach_pick) + " ›", Ui.Kind.GREEN) { pickText() }, ui.block(10))
+        }, ui.block(16))
+        // (1.14.0) the memory manager: her facts, here too — the same list and the same roads
+        // as Ajustes personales' (CapriSettings.facts/forget), plus her memory's export, which
+        // only lives here. «Memoria activada» is the same switch as there (longMemory)
+        val mmBox = ui.col()
+        memBox = mmBox
+        addView(ui.card(Hud.MANE, Hud.CYAN).apply {
+            addView(ui.label(getString(R.string.memmgr_head), Hud.MANE))
+            addView(ui.text(getString(R.string.memmgr_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(6))
+            addView(choice(listOf(R.string.off to false, R.string.on to true),
+                { Store(this@MainActivity).configFlag("longMemory", true) }, { a, b -> a == b }) { CapriSettings.set(this@MainActivity, "longMemory", it) }, ui.block(8))
+            addView(mmBox, ui.block(10))
+            val btns = ui.row()
+            btns.addView(ui.button(getString(R.string.memmgr_export), Ui.Kind.LINE) {
+                val json = CapriSettings.exportMemory(this@MainActivity)
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, json), getString(R.string.memmgr_export)))
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { rightMargin = ui.dpi(8) })
+            btns.addView(ui.button(getString(R.string.settings_memory_forget), Ui.Kind.LINE) {
+                android.app.AlertDialog.Builder(this@MainActivity).setMessage(R.string.settings_memory_forget_sure)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(R.string.settings_memory_forget) { _, _ ->
+                        CapriSettings.forget(this@MainActivity, null)
+                        Toast.makeText(this@MainActivity, R.string.settings_memory_forgot, Toast.LENGTH_SHORT).show()
+                        shownMindFacts = null
+                        memDraw()
+                        refresh()
+                    }.show()
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(btns, ui.block(10))
         }, ui.block(16))
         // (1.13.0) brains on this phone (LiteRtBrain.kt, EXPERIMENTAL): a real model, downloaded
         // once, thinking with no internet — her fallback above her phrase brain, and a brain to
@@ -660,6 +1013,12 @@ class MainActivity : Activity() {
                 Toast.makeText(this@MainActivity, if (ok) R.string.duo_started else R.string.duo_need_on, Toast.LENGTH_LONG).show()
                 if (ok) show(TAB_CHAT)
             }, ui.block(10))
+        }, ui.block(16))
+        // (1.13.1) «Llamada»: a voice talk with her, no name to say first (CallActivity)
+        addView(ui.card(Hud.GREEN).apply {
+            addView(ui.label(getString(R.string.call_head), Hud.GREEN))
+            addView(ui.text(getString(R.string.call_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(6))
+            addView(ui.button(getString(R.string.call_start), Ui.Kind.GREEN) { CallActivity.start(this@MainActivity) }, ui.block(10))
         }, ui.block(16))
         // (1.13.0) «Regresar como estaba»: the newest restore point (RestorePoints.kt), back
         val restoreText = ui.text("", 13f, Hud.PAPER_2, ui.mono)
@@ -700,6 +1059,32 @@ class MainActivity : Activity() {
             addView(aloneState, ui.block(10))
             addView(aloneBtn, ui.block(8))
             addView(ui.button(getString(R.string.alone_history) + " ›", Ui.Kind.LINE) { showAloneHistory() }, ui.block(8))
+        }, ui.block(16))
+        // (1.14.0) the duplicate finder: a folder you pick (Downloads, DCIM…), identical files
+        // grouped, and nothing deleted without the yes in its results dialog (Duplicates.kt)
+        val dupStateView = ui.text("", 13f, Hud.PAPER_2, ui.mono)
+        dupState = dupStateView
+        addView(ui.card(Hud.YELLOW).apply {
+            addView(ui.label(getString(R.string.dup_head)))
+            addView(ui.text(getString(R.string.dup_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(6))
+            addView(dupStateView, ui.block(6))
+            addView(ui.button(getString(R.string.dup_pick) + " ›", Ui.Kind.GREEN) { pickFolderForDups() }, ui.block(8))
+        }, ui.block(16))
+        // (1.14.0) her console: a line of text and what it answered — a few commands of her
+        // own (ayuda, diagnostico, ia, limpiar_cache, termux), never code of yours
+        val consoleField = ui.field(getString(R.string.console_hint))
+        val consoleView = ui.text("", 12f, Hud.PAPER_2, ui.mono).apply { setTextIsSelectable(true); setLineSpacing(0f, 1.2f) }
+        consoleOut = consoleView
+        addView(ui.card(Hud.CYAN).apply {
+            addView(ui.label(getString(R.string.console_head), Hud.CYAN))
+            addView(ui.text(getString(R.string.console_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(6))
+            addView(consoleView, ui.block(8))
+            addView(consoleField, ui.block(8))
+            addView(ui.button(getString(R.string.console_run), Ui.Kind.GREEN) {
+                runConsole(consoleField.text.toString())
+                consoleField.setText("")
+                hideKeyboard()
+            }, ui.block(8))
         }, ui.block(16))
         v2Draw = {
             // the models on this phone: name, size, and what can be done with each
@@ -749,10 +1134,21 @@ class MainActivity : Activity() {
         }
         v2Draw()
         mindDraw = {
-            val facts = CapriSettings.facts(this@MainActivity).size
+            val factsList = CapriSettings.facts(this@MainActivity)
+            val facts = factsList.size
             val chats = ChatLog.size(this@MainActivity)
-            mindView?.lit = facts + chats
+            // (1.14.0) the constellation is her memories themselves (MindView.setData): when
+            // she learns or forgets, this same refresh is what changes the drawing
+            mindFacts = factsList
+            mindView?.setData(factsList, chats)
             mindCounts?.text = getString(R.string.mind_counts, facts, chats)
+            // (1.14.0) her simulated mood, kept by persona.js in memory.json (moodSim)
+            val mood = Store(this@MainActivity).memory()?.optJSONObject("moodSim")
+            mindMood?.text = when {
+                !Store(this@MainActivity).configFlag("moodSimOn", true) -> getString(R.string.mood_off)
+                mood == null -> getString(R.string.mood_none)
+                else -> getString(R.string.mood_line, mood.optString("label"), mood.optInt("energy", 60), mood.optInt("confidence", 50), mood.optInt("curiosity", 50))
+            }
             val lang = CapriVoice.voiceLang(Lang.current(this@MainActivity)) ?: "es-MX"
             val brain = when (val p = CapriSettings.provider(this@MainActivity)) {
                 "local" -> getString(R.string.main_ai_local)
@@ -1982,6 +2378,14 @@ class MainActivity : Activity() {
                 refresh()
             }
             PICK_TEXT -> teachText(uri)
+            PICK_FOLDER -> {
+                // (1.14.0) the duplicate finder's folder (Su mente): keep its access, scan it
+                dupTree = uri
+                runCatching {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                }
+                scanDups(uri)
+            }
             SAVE_LOG -> {
                 val ok = runCatching { contentResolver.openOutputStream(uri)?.use { it.write(logText.toByteArray(Charsets.UTF_8)) } != null }.getOrDefault(false)
                 logText = ""
@@ -2593,6 +2997,26 @@ class MainActivity : Activity() {
                 .show()
         }, ui.block(16))
 
+        // (1.14.0) her bridge to Termux: OFF by default. On, her console (Su mente) gains the
+        // «termux <comando>» command — always with the exact command in a confirmation
+        // dialog before anything runs (TermuxBridge.kt). Termux's own side (its
+        // allow-external-apps) is Termux's to ask, not ours
+        addView(ui.card(Hud.CYAN).apply {
+            addView(ui.label(getString(R.string.termux_head), Hud.CYAN))
+            addView(ui.text(getString(R.string.termux_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(6))
+            addView(choice(listOf(R.string.off to false, R.string.on to true),
+                { Store(this@MainActivity).configFlag("termuxBridge", false) }, { a, b -> a == b }) { on ->
+                CapriSettings.set(this@MainActivity, "termuxBridge", on)
+                if (on) {
+                    if (!TermuxBridge.installed(this@MainActivity)) Toast.makeText(this@MainActivity, R.string.termux_not_installed, Toast.LENGTH_LONG).show()
+                    else if (!TermuxBridge.allowed(this@MainActivity)) {
+                        @Suppress("DEPRECATION")
+                        requestPermissions(arrayOf(TermuxBridge.PERMISSION), Permissions.TERMUX)
+                    }
+                }
+            }, ui.block(8))
+        }, ui.block(16))
+
     }
 
     private fun reportPage() = page {
@@ -2600,6 +3024,27 @@ class MainActivity : Activity() {
         addView(ui.label(getString(R.string.g_report)))
         addView(ui.text(getString(R.string.g_report_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(4))
         addView(reportCard(), ui.block(16))
+        // (1.14.0) her self-check (DiagReport.kt): the state of what makes her work, and the
+        // last errors of the same internal log as always (Diag), as one text to copy and
+        // paste into any chat
+        addView(ui.card(Hud.CYAN).apply {
+            addView(ui.label(getString(R.string.diag_head), Hud.CYAN))
+            addView(ui.text(getString(R.string.diag_how), 13f, Hud.PAPER_2, ui.body).apply { setLineSpacing(0f, 1.15f) }, ui.block(6))
+            val out = ui.text("", 12f, Hud.PAPER_2, ui.mono).apply { setTextIsSelectable(true); setLineSpacing(0f, 1.25f); visibility = View.GONE }
+            addView(out, ui.block(8))
+            val btns = ui.row()
+            btns.addView(ui.button(getString(R.string.diag_run), Ui.Kind.GREEN) {
+                out.text = DiagReport.build(this@MainActivity)
+                out.visibility = View.VISIBLE
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { rightMargin = ui.dpi(8) })
+            btns.addView(ui.button(getString(R.string.diag_copy), Ui.Kind.LINE) {
+                if (out.visibility != View.VISIBLE) out.text = DiagReport.build(this@MainActivity)
+                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("Capri", out.text.toString()))
+                Toast.makeText(this@MainActivity, R.string.diag_copied, Toast.LENGTH_SHORT).show()
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(btns, ui.block(8))
+        }, ui.block(16))
     }
 
 
@@ -2819,6 +3264,7 @@ class MainActivity : Activity() {
     private fun refresh() {
         if (!::ui.isInitialized) return
         showMemory()
+        memDraw()
         chat.status()
         sleepDraw()
         neuroDraw()
@@ -3040,6 +3486,7 @@ class MainActivity : Activity() {
         private const val PICK_PROFILE = 4713 // (V8.5) the private profiles ZIP
         private const val PICK_AVATAR = 4718 // (1.12.0) your profile picture
         private const val PICK_TEXT = 4719 // (1.12.5) a text for her to learn (Su mente)
+        private const val PICK_FOLDER = 4722 // (1.14.0) the duplicate finder's folder (Su mente)
         private const val SAVE_LOG = 4717 // (1.12.0) her beta phones' log, saved where you choose
         private const val SAVE_TEMPLATE = 4716 // (1.12.0) her skin template, saved where you choose
         private const val PICK_SKIN = 4715 // (1.12.0) a community skin, to Emma

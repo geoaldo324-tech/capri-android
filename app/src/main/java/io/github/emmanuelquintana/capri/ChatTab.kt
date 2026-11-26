@@ -63,6 +63,14 @@ class ChatTab(private val a: Activity, private val ui: Ui, private val help: () 
             statusLine = ui.text("", 11f, Hud.GREEN, ui.mono).apply { letterSpacing = 0.1f }
             addView(statusLine)
         }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        // (1.13.1) her call: talk with her by voice, no name to say first (CallActivity)
+        head.addView(ui.text("📞", 16f, Hud.YELLOW, ui.head).apply {
+            gravity = Gravity.CENTER
+            background = Hud.Plate(Hud.INK, Hud.YELLOW, cut = ui.dp(6f), stroke = ui.dp(1f), offset = 0f)
+            contentDescription = a.getString(R.string.call_open)
+            isClickable = true
+            setOnClickListener { CallActivity.start(a) }
+        }, LinearLayout.LayoutParams(ui.dpi(40), ui.dpi(40)).apply { rightMargin = ui.dpi(8) })
         // (1.12.0, community: "subir archivos tipo PDF, Word…") a file for her: a PDF, a Word file, a picture, a video,
         // a song; she opens her chat over your screen and answers about it
         head.addView(ui.text("📎", 18f, Hud.YELLOW, ui.head).apply {
@@ -304,7 +312,8 @@ class ChatTab(private val a: Activity, private val ui: Ui, private val help: () 
             val d = day.format(java.util.Date(e.optLong("at")))
             if (d != lastDay) { lastDay = d; dayLine(d) }
             val q = e.optString("q").trim()
-            if (q.isNotEmpty()) bubble(q, true, null)
+            // (1.13.1) said on a call with her (CallActivity): the little phone says so
+            if (q.isNotEmpty()) bubble(if (e.optBoolean("call")) "📞 $q" else q, true, null)
             bubble(e.optString("a"), false, null)
         }
         duoDraw()

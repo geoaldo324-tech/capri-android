@@ -31,9 +31,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-      - run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+      - run: ./gradlew --no-daemon assembleDebug
       - name: Modelo (caché por revisión)
         if: matrix.api != 26
         uses: actions/cache@v4

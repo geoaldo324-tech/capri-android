@@ -50,6 +50,63 @@ export async function cameraAsk(text, lang, chat) {
   return { line: line || t.said, face: 'look' };
 }
 
+// (1.14.0) her surroundings, when you ask: the screen's brightness and Do Not Disturb
+// (Actions.kt's pcDo, behind Android's own special accesses — its answer says «needs»
+// when one is missing, and its settings page is already open by then)
+const ENV_T = {
+  es: { up: 'Te subí el brillo a {n}%.', down: 'Te bajé el brillo a {n}%.', set: 'Brillo a {n}%.', needWrite: 'Para tocar el brillo, Android me pide un permiso especial: te abrí su pantalla — actívalo y pídeme otra vez.', dndOn: 'No molestar activado: solo tus alarmas y tu gente.', dndOff: 'No molestar quitado.', needDnd: 'Para tocar No molestar, Android me pide su acceso especial: te abrí su pantalla — actívalo y pídeme otra vez.', failed: 'No pude hacerlo.' },
+  en: { up: 'Brightness up to {n}%.', down: 'Brightness down to {n}%.', set: 'Brightness at {n}%.', needWrite: 'To touch the brightness, Android asks me for a special permission: I opened its screen — turn it on and ask me again.', dndOn: 'Do Not Disturb on: only your alarms and your people.', dndOff: 'Do Not Disturb off.', needDnd: 'To touch Do Not Disturb, Android asks me for its special access: I opened its screen — turn it on and ask me again.', failed: 'I couldn’t do that.' },
+};
+const BRIGHT_UP = /sube(?:le)? (?:el )?brillo|más brillo|mas brillo|brillo (?:más|mas) alto|brightness up|raise the brightness|brighter/iu;
+const BRIGHT_DOWN = /baja(?:le)? (?:el )?brillo|menos brillo|brillo (?:más|mas) bajo|brightness down|lower the brightness|dimmer/iu;
+const BRIGHT_SET = /brillo (?:al?|en) (\d{1,3})\s?%|brightness (?:to|at) (\d{1,3})\s?%/iu;
+const DND_ON = /activa(?:r)? (?:el )?(?:modo )?no molestar|pon(?:er)? (?:el )?(?:modo )?no molestar|do not disturb on|turn on do not disturb/iu;
+const DND_OFF = /quita(?:r)? (?:el )?(?:modo )?no molestar|desactiva(?:r)? (?:el )?(?:modo )?no molestar|do not disturb off|turn off do not disturb/iu;
+
+/**
+ * (1.14.0) Brightness and Do Not Disturb, done — not asked to her AI (which would pretend).
+ * Async like cameraAsk: the native side answers { ok, level | on, needs? }.
+ * { line, face } or null when it wasn't an environment ask.
+ */
+export async function envAsk(text, lang) {
+  const said = String(text || '').trim();
+  if (!said || said.split(/\s+/).length > 10) return null;
+  const t = ENV_T[lang] || ENV_T.en;
+  const done = (res, okLine) => {
+    if (res?.needs === 'write_settings') return { line: t.needWrite, face: 'aside' };
+    if (res?.needs === 'dnd_access') return { line: t.needDnd, face: 'aside' };
+    return res?.ok ? { line: okLine(res), face: 'look' } : { line: t.failed, face: 'aside' };
+  };
+  const set = BRIGHT_SET.exec(said);
+  if (set) {
+    const res = await call('pc:do', { action: 'brightness', level: Number(set[1] ?? set[2]) }).catch(() => null);
+    return done(res, (r) => t.set.replace('{n}', r.level));
+  }
+  const up = BRIGHT_UP.test(said);
+  if (up || BRIGHT_DOWN.test(said)) {
+    const now = await call('pc:do', { action: 'brightness' }).catch(() => null);
+    if (!now?.ok) return done(now, () => '');
+    const level = Math.min(100, Math.max(0, (now.level ?? 50) + (up ? 25 : -25)));
+    const res = await call('pc:do', { action: 'brightness', level }).catch(() => null);
+    return done(res, (r) => (up ? t.up : t.down).replace('{n}', r.level));
+  }
+  if (DND_ON.test(said)) {
+    const res = await call('pc:do', { action: 'dnd', on: true }).catch(() => null);
+    return done(res, () => t.dndOn);
+  }
+  if (DND_OFF.test(said)) {
+    const res = await call('pc:do', { action: 'dnd', on: false }).catch(() => null);
+    return done(res, () => t.dndOff);
+  }
+  return null;
+}
+
+// (1.14.0) "busca X": her browser opens with the search — just that (no page reading, no
+// summaries: out of this series, as the proposal itself said). Music is not this: a song
+// is asked to her music, as always
+const BUSCA_ASK = /^(?:busca|búscame|buscar|search(?: for)?|googlea)\s+(.+)$/iu;
+const BUSCA_NOT = /canción|cancion|música|musica|\bsong\b|reproduce|ponme|play/iu;
+
 const GAMES_ASK = /juguemos|jugar (?:algo|contigo|conmigo|ajedrez|buscaminas|cartas|al? (?:21|gato|ajedrez|buscaminas|blackjack|tres en raya|ping ?pong|piedra,? papel))|jugar (?:ping ?pong|piedra,? papel)|juega(?:s)? conmigo|quiero jugar (?:contigo|algo|ajedrez|buscaminas|cartas)|tus juegos|let'?s play|play (?:a game|with me|chess|minesweeper|cards|blackjack|tic.?tac.?toe|ping ?pong|rock,? paper)|your games|jouons|on joue|joue avec moi|jouer aux? (?:échecs|cartes|démineur|morpion)|vamos jogar|bora jogar|joga comigo|jogar (?:xadrez|cartas|campo minado|jogo da velha)|давай (?:сыграем|поиграем)|поиграй со мной|сыграем в/iu;
 const HISTORY_ASK = /(?:mi|el|nuestro|tu) historial|historial (?:de|del) chat|chat history|our (?:chat|history)|historique|hist[oó]rico (?:do|de) chat|meu hist[oó]rico|история (?:чата|переписки)/iu;
 const APPS = [
@@ -67,8 +124,8 @@ const NOT_WHO = /^(?:un|una|a|an|um|uma|un|une|mensaje|message|mensagem|whats ?a
 const who = (said) => [...said.matchAll(MSG_TO)].map((m) => m[1]).find((w) => !NOT_WHO.test(w.split(/\s+/).pop())) || '';
 
 const T = {
-  es: { games: '¡Va! Elige el juego.', history: 'Aquí está todo lo que hemos hablado.', msg: 'Listo: te abrí {app} con el mensaje. Elige a {to}y toca enviar.', msgNoText: 'Te abrí {app}. ¿Qué le quieres decir? Escríbelo tú, yo no envío nada sin ti.', anyone: '', duo: '¡Va! Que platique con mi invitado. La conversación sale en el chat de la app.' },
-  en: { games: 'Okay! Pick a game.', history: 'Here’s everything we’ve talked about.', msg: 'Done: I opened {app} with the message. Pick {to}and tap send.', msgNoText: 'I opened {app}. Write what you want to say: I never send anything without you.', anyone: '', duo: 'Okay! Let me talk with my guest. The conversation shows in the app’s chat.' },
+  es: { games: '¡Va! Elige el juego.', history: 'Aquí está todo lo que hemos hablado.', msg: 'Listo: te abrí {app} con el mensaje. Elige a {to}y toca enviar.', msgNoText: 'Te abrí {app}. ¿Qué le quieres decir? Escríbelo tú, yo no envío nada sin ti.', anyone: '', duo: '¡Va! Que platique con mi invitado. La conversación sale en el chat de la app.', busca: 'Buscando «{q}» en tu navegador.' },
+  en: { games: 'Okay! Pick a game.', history: 'Here’s everything we’ve talked about.', msg: 'Done: I opened {app} with the message. Pick {to}and tap send.', msgNoText: 'I opened {app}. Write what you want to say: I never send anything without you.', anyone: '', duo: 'Okay! Let me talk with my guest. The conversation shows in the app’s chat.', busca: 'Searching for “{q}” in your browser.' },
   fr: { games: 'D’accord ! Choisis un jeu.', history: 'Voilà tout ce qu’on s’est dit.', msg: 'C’est prêt : j’ai ouvert {app} avec le message. Choisis {to}et touche envoyer.', msgNoText: 'J’ai ouvert {app}. Écris ce que tu veux dire : je n’envoie jamais rien sans toi.', anyone: '' },
   pt: { games: 'Bora! Escolhe o jogo.', history: 'Aqui está tudo o que a gente conversou.', msg: 'Pronto: abri o {app} com a mensagem. Escolhe {to}e toca em enviar.', msgNoText: 'Abri o {app}. Escreve o que quer dizer: eu nunca envio nada sem você.', anyone: '' },
   ru: { games: 'Давай! Выбирай игру.', history: 'Вот всё, о чём мы говорили.', msg: 'Готово: я открыла {app} с сообщением. Выбери {to}и нажми «отправить».', msgNoText: 'Я открыла {app}. Напиши, что хочешь сказать: я ничего не отправляю без тебя.', anyone: '' },
@@ -120,6 +177,14 @@ export function extraAsk(text, lang) {
     window.capriDuoStart({});
     return { line: t.duo || T.en.duo, face: 'laugh' };
   }
+  // (1.14.0) "busca X": your browser, with the search (open:url, the same as her weather)
+  if (words <= 12 && !BUSCA_NOT.test(said)) {
+    const q = BUSCA_ASK.exec(said)?.[1]?.trim();
+    if (q) {
+      send('open:url', { url: `https://www.google.com/search?q=${encodeURIComponent(q)}` });
+      return { line: (t.busca || T.en.busca).replace('{q}', q), face: 'look' };
+    }
+  }
   // (1.10.0) "ve atrás", "baja", "toca Ajustes", "escribe aquí hola": she uses your phone (control.js)
   const acted = controlAsk(said, lang);
   if (acted) return acted;
@@ -154,7 +219,8 @@ export function chatAsks({ lang }) {
   chat.send = async function (text, ...rest) {
     if (this.turn || !this.open || this.agent) return ask(text, ...rest);
     // (1.13.0) a photo with the camera, when you ask her ("mira esto"): async, like her looks
-    const did = extraAsk(text, lang()) || await cameraAsk(text, lang(), this);
+    // (1.14.0) …or her surroundings (brightness, Do Not Disturb): async the same way
+    const did = extraAsk(text, lang()) || await cameraAsk(text, lang(), this) || await envAsk(text, lang());
     if (!did) {
       // (1.13.0) an order of several steps: she does them and tells it on her panel as she goes
       if (await window.capriSteps?.tryTask(text).catch(() => false)) {

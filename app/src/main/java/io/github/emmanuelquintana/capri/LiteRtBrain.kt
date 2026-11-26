@@ -1,6 +1,7 @@
 package io.github.emmanuelquintana.capri
 
 import android.content.Context
+import android.os.Build
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
@@ -58,7 +59,7 @@ object LiteRtBrain {
 
     private fun dir(context: Context): File = File(context.filesDir, "litert-models").apply { mkdirs() }
     fun file(context: Context, model: Model): File = File(dir(context), model.file)
-    fun downloaded(context: Context, model: Model): Boolean = file(context, model).let { it.exists() && it.length() > 0 }
+    fun downloaded(context: Context, model: Model): Boolean = file(context, model).let { it.exists() && it.length() == model.bytes }
 
     /** The model she thinks with when her brain is "litert": the one you activated, if it's here. */
     fun active(context: Context): Model? =
@@ -114,7 +115,7 @@ object LiteRtBrain {
                     }
                 }
             }
-            if (part.length() <= 0) { part.delete(); return "empty" }
+            if (part.length() != total) { part.delete(); return "incomplete" }
             part.renameTo(file(context, model))
             null
         } catch (e: Exception) {
@@ -148,12 +149,17 @@ object LiteRtBrain {
      */
     @Synchronized
     fun chat(context: Context, messages: JSONArray): String {
+        if (Build.SUPPORTED_ABIS.none { it == "arm64-v8a" || it == "x86_64" })
+            throw IllegalStateException("no64: this phone is 32-bit only; the downloadable brains need 64-bit")
         val model = active(context) ?: throw IllegalStateException("nomodel: no downloaded model is on")
         val f = file(context, model)
         if (engine == null || enginePath != f.absolutePath) {
             closeEngine()
-            val e = Engine(EngineConfig(modelPath = f.absolutePath, backend = Backend.CPU(), cacheDir = context.cacheDir.absolutePath))
-            e.initialize()
+            val e = try {
+                Engine(EngineConfig(modelPath = f.absolutePath, backend = Backend.CPU(), cacheDir = context.cacheDir.absolutePath)).also { it.initialize() }
+            } catch (ex: Exception) {
+                throw IllegalStateException("modelbad: the model on this phone could not be loaded (${ex.message})")
+            }
             engine = e
             enginePath = f.absolutePath
         }

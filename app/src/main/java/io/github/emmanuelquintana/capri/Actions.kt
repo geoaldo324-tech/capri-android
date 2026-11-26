@@ -1,6 +1,7 @@
 package io.github.emmanuelquintana.capri
 
 import android.app.ActivityManager
+import android.app.NotificationManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -213,6 +214,15 @@ class Actions(private val context: Context, private val store: Store) {
             if (req.has("level") && !req.isNull("level")) req.optInt("level") else null,
             if (req.has("mute") && !req.isNull("mute")) req.optBoolean("mute") else null,
         )
+        // (1.14.0) the screen's brightness and Do Not Disturb, when she is asked: both sit
+        // behind a special access of Android's; without it, its own page opens so you can
+        // give it, and the answer says what's missing («needs») instead of failing quietly
+        "brightness" -> brightness(
+            if (req.has("level") && !req.isNull("level")) req.optInt("level") else null,
+        )
+        "dnd" -> dnd(
+            if (req.has("on") && !req.isNull("on")) req.optBoolean("on") else null,
+        )
         // no snipping tool, no windows to sweep aside or arrange, no theme or power switch for an app
         "snip", "tidy", "theme", "power" -> false
         "arrange" -> JSONObject().put("found", false)
@@ -283,6 +293,45 @@ class Actions(private val context: Context, private val store: Store) {
         val cm = context.getSystemService(ConnectivityManager::class.java)!!
         val props: LinkProperties = cm.getLinkProperties(cm.activeNetwork) ?: return null
         return props.linkAddresses.map { it.address }.firstOrNull { it is Inet4Address && !it.isLoopbackAddress }?.hostAddress
+    }
+
+    /** (1.14.0) The screen's brightness, 0-100 (read when no level comes). Changing it needs
+     *  Android's «write settings» access: without it, that settings page opens and the answer
+     *  carries needs=write_settings, so her page can say so. */
+    private fun brightness(level: Int?): Any {
+        if (!Settings.System.canWrite(context)) {
+            runCatching {
+                context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            return JSONObject().put("ok", false).put("needs", "write_settings")
+        }
+        val cr = context.contentResolver
+        if (level != null) {
+            // a manual level only sticks with the automatic brightness off
+            runCatching { Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL) }
+            Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, (level.coerceIn(0, 100) * 255 / 100).coerceIn(1, 255))
+        }
+        val now = runCatching { Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS) }.getOrDefault(0)
+        return JSONObject().put("ok", true).put("level", Math.round(now * 100f / 255f))
+    }
+
+    /** (1.14.0) Do Not Disturb on or off (read when no state comes). Needs Android's
+     *  notification-policy access: without it, that settings page opens and the answer
+     *  carries needs=dnd_access. On = priority only (alarms and your people), like Android's
+     *  own quick tile leaves it. */
+    private fun dnd(on: Boolean?): Any {
+        val nm = context.getSystemService(NotificationManager::class.java)!!
+        if (!nm.isNotificationPolicyAccessGranted) {
+            runCatching {
+                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            return JSONObject().put("ok", false).put("needs", "dnd_access")
+        }
+        if (on != null) {
+            nm.setInterruptionFilter(if (on) NotificationManager.INTERRUPTION_FILTER_PRIORITY else NotificationManager.INTERRUPTION_FILTER_ALL)
+        }
+        return JSONObject().put("ok", true).put("on", nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL)
     }
 
     private fun volume(level: Int?, mute: Boolean?): Any {

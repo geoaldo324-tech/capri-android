@@ -31,6 +31,7 @@ import { tweak } from './phone-tweaks.js';
 import { iconMode } from './icon.js';
 import { floatMode } from './float.js';
 import { longMemory } from './memory.js';
+import { personaTuning } from './persona.js'; // (1.14.0) her adjustable personality + her simulated mood
 import { phoneCare } from './phone-care.js';
 import { moods, cutin } from './moods.js';
 import { wardrobe } from './wardrobe.js';
@@ -153,6 +154,12 @@ const DEFAULTS = {
   duoName: '',
   duoAbout: '',
   litertModel: '',               // (1.13.0) the downloaded model on this phone that's on (LiteRtBrain.kt)
+  // (1.14.0) series 3
+  personaOn: true,               // her adjustable personality (persona.js): six sliders that only lean her tone
+  personaWarmth: 70, personaCuriosity: 65, personaCreativity: 60, // at these she talks as she always has
+  personaFormality: 30, personaHumor: 45, personaInitiative: 50,
+  moodSimOn: true,               // her simulated mood (persona.js): a software state, never feelings
+  termuxBridge: false,           // her console's bridge to Termux (TermuxBridge.kt): off as it comes
 };
 
 // setup.js's
@@ -830,6 +837,8 @@ const FRIENDLY = {
   es: [
     [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'a tu cuenta de esa IA le falta saldo para esto; usa un modelo gratis (los que dicen «free») o recarga'],
     [/must be a string|image_url|vision|multimodal|modalit/i, 'esa IA no puede ver imágenes'],
+    [/no64/i, 'este teléfono es de 32 bits y los cerebros que se descargan necesitan uno de 64 bits: aquí no pueden correr'],
+    [/modelbad/i, 'el modelo guardado en el teléfono está dañado o su descarga quedó a medias: bórralo en Su mente y descárgalo de nuevo'],
     [/^not allowed/i, 'no me diste permiso de ver tu pantalla'],
     [/screen off/i, 'la pantalla está apagada'],
     [/no picture|picture is gone/i, 'no me llegó la imagen, intenta otra vez'],
@@ -844,6 +853,8 @@ const FRIENDLY = {
   en: [
     [/afford|credits|insufficient.*(credit|balance|funds)|payment required/i, 'your account with that AI is short on credit for this; pick a free model (the ones marked “free”) or top it up'],
     [/must be a string|image_url|vision|multimodal|modalit/i, 'that AI can’t see pictures'],
+    [/no64/i, 'this phone is 32-bit and the downloadable brains need a 64-bit one: they can’t run here'],
+    [/modelbad/i, 'the model saved on this phone is damaged or its download was cut short: delete it in Su mente and download it again'],
     [/^not allowed/i, 'you didn’t let me see your screen'],
     [/screen off/i, 'the screen is off'],
     [/no picture|picture is gone/i, 'the picture didn’t reach me, try again'],
@@ -2020,8 +2031,16 @@ on('settings:apply', async (p = {}) => {
   if (typeof p.batteryFull === 'number') updateConfig({ batteryFull: Math.min(100, Math.max(50, Math.round(p.batteryFull))) });
   if (typeof p.batteryLow === 'number') updateConfig({ batteryLow: Math.min(50, Math.max(5, Math.round(p.batteryLow))) });
   if (typeof p.breakHours === 'number') updateConfig({ breakHours: Math.min(6, Math.max(0.5, p.breakHours)) });
+  // (1.14.0) what never becomes a memory on this side either: a password, a key, a card
+  // number (CapriSettings.looksSecret checks the same on the app's side)
+  const SECRET = /contraseñ|password|passwd|api[ -]?key|clave de|token|cvv|tarjeta de|\d[\d ]{11,}\d/i;
   // the app's Settings: one thing she remembers about you, or all of it, forgotten
   if (typeof p.forgetFact === 'string') saveMemory({ facts: (readMemory().facts || []).filter((f) => f !== p.forgetFact) });
+  // (1.14.0) one of her memories, rewritten where it stands (Su mente's map: CapriSettings.editFact)
+  if (p.editFact && typeof p.editFact === 'object') {
+    const to = String(p.editFact.to || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (to && !SECRET.test(to)) saveMemory({ facts: (readMemory().facts || []).map((f) => (f === p.editFact.from ? to : f)) });
+  }
   if (p.forgetFacts) {
     // and what you'd talked about so far isn't noted down again
     const said = (readMemory().history || []).at(-1)?.content;
@@ -2029,7 +2048,7 @@ on('settings:apply', async (p = {}) => {
   }
   // (1.12.5) «Enseñarle un texto» in the app (Su mente): a file's lines, kept as things she remembers
   if (Array.isArray(p.teachFacts)) {
-    const clean = p.teachFacts.map((f) => String(f || '').replace(/\s+/g, ' ').trim().slice(0, 160)).filter(Boolean);
+    const clean = p.teachFacts.map((f) => String(f || '').replace(/\s+/g, ' ').trim().slice(0, 160)).filter((f) => f && !SECRET.test(f)); // (1.14.0) no secrets
     if (clean.length) {
       const known = readMemory().facts || [];
       saveMemory({ facts: [...known, ...clean.filter((f) => !known.includes(f))].slice(0, 60) }); // (memory.js: at most 60)
@@ -2040,6 +2059,12 @@ on('settings:apply', async (p = {}) => {
   if ('actsAlone' in p) updateConfig({ actsAlone: Boolean(p.actsAlone) });
   for (const key of ['aloneApps', 'aloneTap', 'aloneScroll', 'aloneType']) if (key in p) updateConfig({ [key]: Boolean(p[key]) });
   if (typeof p.litertModel === 'string') updateConfig({ litertModel: p.litertModel }); // (1.13.0) which downloaded model is on (LiteRtBrain.kt)
+  // (1.14.0) her adjustable personality and her simulated mood (Su mente's sliders)
+  if ('personaOn' in p) updateConfig({ personaOn: Boolean(p.personaOn) });
+  for (const key of ['personaWarmth', 'personaCuriosity', 'personaCreativity', 'personaFormality', 'personaHumor', 'personaInitiative'])
+    if (typeof p[key] === 'number') updateConfig({ [key]: Math.min(100, Math.max(0, Math.round(p[key]))) });
+  if ('moodSimOn' in p) updateConfig({ moodSimOn: Boolean(p.moodSimOn) });
+  if ('termuxBridge' in p) updateConfig({ termuxBridge: Boolean(p.termuxBridge) }); // (1.14.0) her console's Termux bridge
   if (typeof p.duoProvider === 'string') updateConfig({ duoProvider: p.duoProvider });
   if (typeof p.duoName === 'string') updateConfig({ duoName: p.duoName.slice(0, 40) });
   if (typeof p.duoAbout === 'string') updateConfig({ duoAbout: p.duoAbout.slice(0, 200) });
@@ -2158,6 +2183,7 @@ ready.then(() => {
     iconFaces({ cfg: () => cfg }); // (1.10.0) her icon, with more feelings
     floatMode({ cfg: () => cfg, setConfig: updateConfig });
     longMemory({ cfg: () => cfg, readMemory, saveMemory });
+    personaTuning({ cfg: () => cfg, readMemory, saveMemory }); // (1.14.0) after memory: its personal() wraps hers
     phoneCare({ cfg: () => cfg });
     moods({ cfg: () => cfg });
     window.dev.voicelines = voiceLines({ cfg: () => cfg, lang: () => resolveLang(cfg.lang) }); // (after moods: her phrase gets its face too)
@@ -2189,20 +2215,38 @@ ready.then(() => {
     window.dev.saver = saver({ cfg: () => cfg, lang: () => resolveLang(cfg.lang), setConfig: updateConfig }); // battery saver
     // 1.11.0
     appChat({ lang: () => resolveLang(cfg.lang) }); // her chat inside the app (its Chat tab)
-    // (1.13.0) «Platicar con otra IA»: both sides talk through brainCall (hers is her own brain,
-    // the guest's is the one you picked); turns land in the app's chat (Duo.kt draws them
-    // there, the guest's in its own colour), and only she speaks out loud
+    // (1.13.0, rediseñado en 1.14.0) «Platicar con otra IA»: both sides talk through brainCall
+    // (hers is her own brain, the guest's is the one you picked); turns land in the app's chat
+    // (Duo.kt draws them there, the guest's in its own colour), and only she speaks out loud.
+    // (1.14.0) The guest never has no brain: if the picked one fails, the chain walks on —
+    // the picked one, then her own brain (with the guest's persona), then her lines — and
+    // duo.js announces the switch in the chat. Her side gets one retry: a hiccup of her
+    // provider shouldn't kill a talk in its first second. Errors reach the chat through
+    // friendly(), never raw
     let guestBrain = { provider: 'local', model: null };
+    const guestChain = () => [guestBrain.picked, cfg.provider, 'local'].filter((v, i, a) => v && a.indexOf(v) === i);
     window.capriDuo = createDuo({
       personaCapri: () => window.dev?.chat?.persona?.() || '',
       capriName: 'Capri',
-      askCapri: (messages) => brainCall(cfg.provider, messages),
+      friendly: (err) => friendly(err?.message || err),
+      askCapri: async (messages) => {
+        try { return await brainCall(cfg.provider, messages); }
+        catch (e) { await new Promise((r) => setTimeout(r, 1200)); return brainCall(cfg.provider, messages); }
+      },
       askGuest: (messages) => brainCall(guestBrain.provider, messages, { model: guestBrain.model }),
+      guestFallback: async () => {
+        const chain = guestChain();
+        const next = chain[chain.indexOf(guestBrain.provider) + 1];
+        if (!next) return false;
+        guestBrain = { ...guestBrain, provider: next, model: null };
+        return true;
+      },
       turn: (t) => send('duo:turn', t),
       state: (on) => send('duo:state', { on }),
     });
     window.capriDuoStart = (opts = {}) => {
       guestBrain = { provider: String(opts.provider || cfg.duoProvider || 'local'), model: opts.model || null };
+      guestBrain.picked = guestBrain.provider;
       window.capriDuo.start({
         name: String(opts.name ?? cfg.duoName ?? ''),
         about: String(opts.about ?? cfg.duoAbout ?? ''),

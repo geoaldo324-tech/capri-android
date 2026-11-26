@@ -133,6 +133,10 @@ export function longMemory({ cfg, readMemory, saveMemory }) {
   return { run, pending };
 }
 
+// (1.14.0) what must never become a memory, enforced in code too (her note-taking prompt
+// already says it; this is the net under it — the same check as CapriSettings.looksSecret)
+const SECRET = /contraseñ|password|passwd|api[ -]?key|clave de|token|cvv|tarjeta de|\d[\d ]{11,}\d/i;
+
 // The JSON in her AI's answer (some wrap it in ```json, or add a word around it): checked and trimmed.
 function parse(text) {
   const s = String(text || '');
@@ -144,7 +148,7 @@ function parse(text) {
     const facts = (Array.isArray(json.facts) ? json.facts : [])
       .filter((f) => typeof f === 'string')
       .map((f) => f.replace(/\s+/g, ' ').trim().slice(0, FACT_CHARS))
-      .filter((f) => f.length > 2);
+      .filter((f) => f.length > 2 && !SECRET.test(f));
     const unique = [...new Map(facts.map((f) => [f.toLowerCase(), f])).values()].slice(0, MAX_FACTS);
     const last = typeof json.last === 'string' ? json.last.replace(/\s+/g, ' ').trim().slice(0, 240) : '';
     const phrases = [...new Set((Array.isArray(json.phrases) ? json.phrases : []).filter((p) => typeof p === 'string')

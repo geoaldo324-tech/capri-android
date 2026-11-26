@@ -35,6 +35,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Termux's RUN_COMMAND, to plug her hooks in from her own button -->
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <!-- (1.14.0) her changing the screen brightness when you ask: a special access Android
+         grants (or not) from its own settings page, never silently (Actions.kt «brightness») -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
     <queries>
         <package android:name="com.termux" />
@@ -80,6 +83,12 @@
             android:excludeFromRecents="true"
             android:noHistory="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- (1.13.1) her call: a voice talk inside the app, mic only while its screen is up -->
+        <activity
+            android:name=".CallActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
 
         <!-- (1.13.0) her camera's permission ask and its one photo (Camera.kt) -->
         <activity
@@ -201,6 +210,18 @@
             android:exported="true"
             android:icon="@drawable/ic_notify"
             android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- (1.14.0) «Hablar con Capri»: a second tile, straight into her call screen -->
+        <service
+            android:name=".CapriTalkTile"
+            android:exported="true"
+            android:icon="@drawable/ic_notify"
+            android:label="@string/talk_tile_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
