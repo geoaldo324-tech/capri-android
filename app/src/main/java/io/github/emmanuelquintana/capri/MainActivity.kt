@@ -2035,9 +2035,9 @@ class MainActivity : Activity() {
             return
         }
         val pieces = ArrayList<String>()
-        for (block in raw.split(Regex("\n\s*\n"))) {
+        for (block in raw.split(Regex("\\n\\s*\\n"))) {
             for (line in block.lines()) {
-                var s = line.trim().trimStart('#', '-', '*', '>', ' ').replace(Regex("\s+"), " ").trim()
+                var s = line.trim().trimStart('#', '-', '*', '>', ' ').replace(Regex("\\s+"), " ").trim()
                 while (s.length > 160) { // a long line: cut at a word, the rest is its own memory
                     val cut = s.lastIndexOf(' ', 160).takeIf { it > 40 } ?: 160
                     pieces.add(s.substring(0, cut).trim())
