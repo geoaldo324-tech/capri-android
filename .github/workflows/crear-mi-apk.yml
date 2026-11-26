@@ -14,7 +14,11 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Instalar SDK 36
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        run: |
+          SDK="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDK" ] || SDK="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          yes | "$SDK" --licenses >/dev/null
+          "$SDK" "platforms;android-36" "build-tools;36.0.0"
       - name: Compilar el APK
         run: |
           chmod +x gradlew
